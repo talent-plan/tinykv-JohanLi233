@@ -17,7 +17,6 @@ package raft
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"sort"
@@ -89,7 +88,7 @@ func diffu(a, b string) string {
 }
 
 func mustTemp(pre, body string) string {
-	f, err := ioutil.TempFile("", pre)
+	f, err := os.CreateTemp("", pre)
 	if err != nil {
 		panic(err)
 	}
@@ -121,7 +120,9 @@ func IsLocalMsg(msgt pb.MessageType) bool {
 }
 
 func IsResponseMsg(msgt pb.MessageType) bool {
-	return msgt == pb.MessageType_MsgAppendResponse || msgt == pb.MessageType_MsgRequestVoteResponse || msgt == pb.MessageType_MsgHeartbeatResponse
+	return msgt == pb.MessageType_MsgAppendResponse ||
+		msgt == pb.MessageType_MsgRequestVoteResponse ||
+		msgt == pb.MessageType_MsgHeartbeatResponse
 }
 
 func isHardStateEqual(a, b pb.HardState) bool {

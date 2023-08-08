@@ -192,7 +192,15 @@ func TestLeaderElectionInOneRoundRPC2AA(t *testing.T) {
 
 		r.Step(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgHup})
 		for id, vote := range tt.votes {
-			r.Step(pb.Message{From: id, To: 1, Term: r.Term, MsgType: pb.MessageType_MsgRequestVoteResponse, Reject: !vote})
+			r.Step(
+				pb.Message{
+					From:    id,
+					To:      1,
+					Term:    r.Term,
+					MsgType: pb.MessageType_MsgRequestVoteResponse,
+					Reject:  !vote,
+				},
+			)
 		}
 
 		if r.State != tt.state {
@@ -229,7 +237,13 @@ func TestFollowerVote2AA(t *testing.T) {
 
 		msgs := r.readMessages()
 		wmsgs := []pb.Message{
-			{From: 1, To: tt.nvote, Term: 1, MsgType: pb.MessageType_MsgRequestVoteResponse, Reject: tt.wreject},
+			{
+				From:    1,
+				To:      tt.nvote,
+				Term:    1,
+				MsgType: pb.MessageType_MsgRequestVoteResponse,
+				Reject:  tt.wreject,
+			},
 		}
 		if !reflect.DeepEqual(msgs, wmsgs) {
 			t.Errorf("#%d: msgs = %v, want %v", i, msgs, wmsgs)
@@ -382,8 +396,26 @@ func TestLeaderStartReplication2AB(t *testing.T) {
 	ent := pb.Entry{Index: li + 1, Term: 1, Data: []byte("some data")}
 	wents := []pb.Entry{ent}
 	wmsgs := []pb.Message{
-		{From: 1, To: 2, Term: 1, MsgType: pb.MessageType_MsgAppend, Index: li, LogTerm: 1, Entries: []*pb.Entry{&ent}, Commit: li},
-		{From: 1, To: 3, Term: 1, MsgType: pb.MessageType_MsgAppend, Index: li, LogTerm: 1, Entries: []*pb.Entry{&ent}, Commit: li},
+		{
+			From:    1,
+			To:      2,
+			Term:    1,
+			MsgType: pb.MessageType_MsgAppend,
+			Index:   li,
+			LogTerm: 1,
+			Entries: []*pb.Entry{&ent},
+			Commit:  li,
+		},
+		{
+			From:    1,
+			To:      3,
+			Term:    1,
+			MsgType: pb.MessageType_MsgAppend,
+			Index:   li,
+			LogTerm: 1,
+			Entries: []*pb.Entry{&ent},
+			Commit:  li,
+		},
 	}
 	if !reflect.DeepEqual(msgs, wmsgs) {
 		t.Errorf("msgs = %+v, want %+v", msgs, wmsgs)
@@ -407,7 +439,14 @@ func TestLeaderCommitEntry2AB(t *testing.T) {
 	r.becomeLeader()
 	commitNoopEntry(r, s)
 	li := r.RaftLog.LastIndex()
-	r.Step(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("some data")}}})
+	r.Step(
+		pb.Message{
+			From:    1,
+			To:      1,
+			MsgType: pb.MessageType_MsgPropose,
+			Entries: []*pb.Entry{{Data: []byte("some data")}},
+		},
+	)
 
 	for _, m := range r.readMessages() {
 		r.Step(acceptAndReply(m))
@@ -461,7 +500,14 @@ func TestLeaderAcknowledgeCommit2AB(t *testing.T) {
 		r.becomeLeader()
 		commitNoopEntry(r, s)
 		li := r.RaftLog.LastIndex()
-		r.Step(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("some data")}}})
+		r.Step(
+			pb.Message{
+				From:    1,
+				To:      1,
+				MsgType: pb.MessageType_MsgPropose,
+				Entries: []*pb.Entry{{Data: []byte("some data")}},
+			},
+		)
 
 		for _, m := range r.readMessages() {
 			if tt.acceptors[m.To] {
@@ -494,14 +540,25 @@ func TestLeaderCommitPrecedingEntries2AB(t *testing.T) {
 		r.Term = 2
 		r.becomeCandidate()
 		r.becomeLeader()
-		r.Step(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("some data")}}})
+		r.Step(
+			pb.Message{
+				From:    1,
+				To:      1,
+				MsgType: pb.MessageType_MsgPropose,
+				Entries: []*pb.Entry{{Data: []byte("some data")}},
+			},
+		)
 
 		for _, m := range r.readMessages() {
 			r.Step(acceptAndReply(m))
 		}
 
 		li := uint64(len(tt))
-		wents := append(tt, pb.Entry{Term: 3, Index: li + 1}, pb.Entry{Term: 3, Index: li + 2, Data: []byte("some data")})
+		wents := append(
+			tt,
+			pb.Entry{Term: 3, Index: li + 1},
+			pb.Entry{Term: 3, Index: li + 2, Data: []byte("some data")},
+		)
 		if g := r.RaftLog.nextEnts(); !reflect.DeepEqual(g, wents) {
 			t.Errorf("#%d: ents = %+v, want %+v", i, g, wents)
 		}
@@ -548,7 +605,16 @@ func TestFollowerCommitEntry2AB(t *testing.T) {
 		r := newTestRaft(1, []uint64{1, 2, 3}, 10, 1, NewMemoryStorage())
 		r.becomeFollower(1, 2)
 
-		r.Step(pb.Message{From: 2, To: 1, MsgType: pb.MessageType_MsgAppend, Term: 1, Entries: tt.ents, Commit: tt.commit})
+		r.Step(
+			pb.Message{
+				From:    2,
+				To:      1,
+				MsgType: pb.MessageType_MsgAppend,
+				Term:    1,
+				Entries: tt.ents,
+				Commit:  tt.commit,
+			},
+		)
 
 		if g := r.RaftLog.committed; g != tt.commit {
 			t.Errorf("#%d: committed = %d, want %d", i, g, tt.commit)
@@ -594,7 +660,16 @@ func TestFollowerCheckMessageType_MsgAppend2AB(t *testing.T) {
 		r.becomeFollower(2, 2)
 		msgs := r.readMessages() // clear message
 
-		r.Step(pb.Message{From: 2, To: 1, MsgType: pb.MessageType_MsgAppend, Term: 2, LogTerm: tt.term, Index: tt.index})
+		r.Step(
+			pb.Message{
+				From:    2,
+				To:      1,
+				MsgType: pb.MessageType_MsgAppend,
+				Term:    2,
+				LogTerm: tt.term,
+				Index:   tt.index,
+			},
+		)
 
 		msgs = r.readMessages()
 		if len(msgs) != 1 {
@@ -653,7 +728,17 @@ func TestFollowerAppendEntries2AB(t *testing.T) {
 		r := newTestRaft(1, []uint64{1, 2, 3}, 10, 1, storage)
 		r.becomeFollower(2, 2)
 
-		r.Step(pb.Message{From: 2, To: 1, MsgType: pb.MessageType_MsgAppend, Term: tt.lterm, LogTerm: tt.term, Index: tt.index, Entries: tt.ents})
+		r.Step(
+			pb.Message{
+				From:    2,
+				To:      1,
+				MsgType: pb.MessageType_MsgAppend,
+				Term:    tt.lterm,
+				LogTerm: tt.term,
+				Index:   tt.index,
+				Entries: tt.ents,
+			},
+		)
 
 		wents := make([]pb.Entry, 0, len(tt.wents))
 		for _, ent := range tt.wents {
@@ -724,7 +809,10 @@ func TestLeaderSyncFollowerLog2AB(t *testing.T) {
 			{},
 			{Term: 1, Index: 1}, {Term: 1, Index: 2}, {Term: 1, Index: 3},
 			{Term: 2, Index: 4}, {Term: 2, Index: 5}, {Term: 2, Index: 6},
-			{Term: 3, Index: 7}, {Term: 3, Index: 8}, {Term: 3, Index: 9}, {Term: 3, Index: 10}, {Term: 3, Index: 11},
+			{
+				Term:  3,
+				Index: 7,
+			}, {Term: 3, Index: 8}, {Term: 3, Index: 9}, {Term: 3, Index: 10}, {Term: 3, Index: 11},
 		},
 	}
 	for i, tt := range tests {
@@ -744,9 +832,23 @@ func TestLeaderSyncFollowerLog2AB(t *testing.T) {
 		n.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgHup})
 		// The election occurs in the term after the one we loaded with
 		// lead's term and committed index setted up above.
-		n.send(pb.Message{From: 3, To: 1, MsgType: pb.MessageType_MsgRequestVoteResponse, Term: term + 1})
+		n.send(
+			pb.Message{
+				From:    3,
+				To:      1,
+				MsgType: pb.MessageType_MsgRequestVoteResponse,
+				Term:    term + 1,
+			},
+		)
 
-		n.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}})
+		n.send(
+			pb.Message{
+				From:    1,
+				To:      1,
+				MsgType: pb.MessageType_MsgPropose,
+				Entries: []*pb.Entry{{}},
+			},
+		)
 
 		if g := diffu(ltoa(lead.RaftLog), ltoa(follower.RaftLog)); g != "" {
 			t.Errorf("#%d: log diff:\n%s", i, g)
@@ -831,7 +933,16 @@ func TestVoter2AB(t *testing.T) {
 		storage.Append(tt.ents)
 		r := newTestRaft(1, []uint64{1, 2}, 10, 1, storage)
 
-		r.Step(pb.Message{From: 2, To: 1, MsgType: pb.MessageType_MsgRequestVote, Term: 3, LogTerm: tt.logterm, Index: tt.index})
+		r.Step(
+			pb.Message{
+				From:    2,
+				To:      1,
+				MsgType: pb.MessageType_MsgRequestVote,
+				Term:    3,
+				LogTerm: tt.logterm,
+				Index:   tt.index,
+			},
+		)
 
 		msgs := r.readMessages()
 		if len(msgs) != 1 {
@@ -839,7 +950,12 @@ func TestVoter2AB(t *testing.T) {
 		}
 		m := msgs[0]
 		if m.MsgType != pb.MessageType_MsgRequestVoteResponse {
-			t.Errorf("#%d: msgType = %d, want %d", i, m.MsgType, pb.MessageType_MsgRequestVoteResponse)
+			t.Errorf(
+				"#%d: msgType = %d, want %d",
+				i,
+				m.MsgType,
+				pb.MessageType_MsgRequestVoteResponse,
+			)
 		}
 		if m.Reject != tt.wreject {
 			t.Errorf("#%d: reject = %t, want %t", i, m.Reject, tt.wreject)
@@ -872,9 +988,24 @@ func TestLeaderOnlyCommitsLogFromCurrentTerm2AB(t *testing.T) {
 		r.becomeLeader()
 		r.readMessages()
 		// propose a entry to current term
-		r.Step(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}})
+		r.Step(
+			pb.Message{
+				From:    1,
+				To:      1,
+				MsgType: pb.MessageType_MsgPropose,
+				Entries: []*pb.Entry{{}},
+			},
+		)
 
-		r.Step(pb.Message{From: 2, To: 1, MsgType: pb.MessageType_MsgAppendResponse, Term: r.Term, Index: tt.index})
+		r.Step(
+			pb.Message{
+				From:    2,
+				To:      1,
+				MsgType: pb.MessageType_MsgAppendResponse,
+				Term:    r.Term,
+				Index:   tt.index,
+			},
+		)
 		if r.RaftLog.committed != tt.wcommit {
 			t.Errorf("#%d: commit = %d, want %d", i, r.RaftLog.committed, tt.wcommit)
 		}
@@ -901,7 +1032,8 @@ func commitNoopEntry(r *Raft, s *MemoryStorage) {
 	// simulate the response of MessageType_MsgAppend
 	msgs := r.readMessages()
 	for _, m := range msgs {
-		if m.MsgType != pb.MessageType_MsgAppend || len(m.Entries) != 1 || m.Entries[0].Data != nil {
+		if m.MsgType != pb.MessageType_MsgAppend || len(m.Entries) != 1 ||
+			m.Entries[0].Data != nil {
 			panic("not a message to append noop entry")
 		}
 		r.Step(acceptAndReply(m))
