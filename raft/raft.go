@@ -16,6 +16,7 @@ package raft
 
 import (
 	"errors"
+	"fmt"
 
 	pb "github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
 )
@@ -220,33 +221,37 @@ func (r *Raft) sendHeartbeat(to uint64) {
 	r.msgs = append(r.msgs, msg)
 }
 
+func (r *Raft) electionTick() {
+	r.electionElapsed += 1
+	if r.electionElapsed > r.electionTimeout+randTime(r.electionTimeout) {
+		r.startElection()
+		r.electionElapsed = 0
+	}
+}
+
+func (r *Raft) heartbeatTick() {
+	r.heartbeatElapsed += 1
+	if r.heartbeatElapsed >= r.heartbeatTimeout {
+		r.heartbeatElapsed = 0
+		for peer := range r.Prs {
+			if peer == r.id {
+				continue
+			}
+			r.sendHeartbeat(peer)
+		}
+	}
+}
+
 // tick advances the internal logical clock by a single tick.
 func (r *Raft) tick() {
 	// Your Code Here (2A).
 	switch r.State {
 	case StateFollower:
-		r.electionElapsed += 1
-		if r.electionElapsed > r.electionTimeout+randTime(r.electionTimeout) {
-			r.startElection()
-			r.electionElapsed = 0
-		}
+		r.electionTick()
 	case StateCandidate:
-		r.electionElapsed += 1
-		if r.electionElapsed > r.electionTimeout+randTime(r.electionTimeout) {
-			r.startElection()
-			r.electionElapsed = 0
-		}
+		r.electionTick()
 	case StateLeader:
-		r.heartbeatElapsed += 1
-		if r.heartbeatElapsed >= r.heartbeatTimeout {
-			r.heartbeatElapsed = 0
-			for peer := range r.Prs {
-				if peer == r.id {
-					continue
-				}
-				r.sendHeartbeat(peer)
-			}
-		}
+		r.heartbeatTick()
 	}
 }
 
@@ -301,6 +306,7 @@ func (r *Raft) becomeLeader() {
 	r.State = StateLeader
 	r.Lead = r.id
 	r.Vote = 0
+	r.RaftLog.entries = append(r.RaftLog.entries, pb.Entry{})
 	for peer := range r.Prs {
 		r.Prs[peer].Next = 0
 		r.Prs[peer].Match = 0
@@ -318,10 +324,11 @@ func (r *Raft) Step(m pb.Message) error {
 	case 1: //MsgBeat
 		r.handleHeartbeat(m)
 	case 2: //MsgPropose
+		fmt.Println(2)
 	case 3: //MsgAppend
 		r.handleAppendEntries(m)
 	case 4: //MsgAppendResponse
-
+		fmt.Println(4)
 	case 5: //RequestVote
 		r.handleRequestVote(m)
 
@@ -331,8 +338,10 @@ func (r *Raft) Step(m pb.Message) error {
 	case 7: //MsgSnapshot
 
 	case 8: //MsgHeartbeat
+		fmt.Println(8)
 
-	case 9: //MsgHeartbeatRequest
+	case 9: //MsgHeartbeat
+		fmt.Println(9)
 
 	case 11: //MsgTransferLeader
 
