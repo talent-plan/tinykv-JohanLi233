@@ -26,8 +26,8 @@ import (
 	pb "github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
 )
 
-func randTime() int {
-	return int(rand.Int63()) % 10
+func randTime(base int) int {
+	return int(rand.Int63()) % base
 }
 
 func min(a, b uint64) uint64 {

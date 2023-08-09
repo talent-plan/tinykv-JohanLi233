@@ -226,13 +226,13 @@ func (r *Raft) tick() {
 	switch r.State {
 	case StateFollower:
 		r.electionElapsed += 1
-		if r.electionElapsed > r.electionTimeout+randTime() {
+		if r.electionElapsed > r.electionTimeout+randTime(r.electionTimeout) {
 			r.startElection()
 			r.electionElapsed = 0
 		}
 	case StateCandidate:
 		r.electionElapsed += 1
-		if r.electionElapsed > r.electionTimeout+randTime() {
+		if r.electionElapsed > r.electionTimeout+randTime(r.electionTimeout) {
 			r.startElection()
 			r.electionElapsed = 0
 		}
@@ -262,6 +262,9 @@ func (r *Raft) becomeFollower(term uint64, lead uint64) {
 }
 
 func (r *Raft) startElection() {
+	if r.State == StateLeader {
+		return
+	}
 	r.becomeCandidate()
 	r.msgs = []pb.Message{}
 	if len(r.Prs) == 1 {
@@ -361,11 +364,23 @@ func (r *Raft) handleAppendEntries(m pb.Message) {
 // handleHeartbeat handle Heartbeat RPC request
 func (r *Raft) handleHeartbeat(m pb.Message) {
 	// Your Code Here (2A).
-	if m.Term > r.Term {
-		r.becomeFollower(m.Term, m.From)
+	if r.State == StateLeader {
+		if m.Term > r.Term {
+			r.becomeFollower(m.Term, m.From)
+		}
+		r.Vote = 0
+		r.electionElapsed = 0
+		for peer := range r.Prs {
+			if peer == r.id {
+				continue
+			}
+			msg := pb.Message{}
+			msg.MsgType = pb.MessageType_MsgHeartbeat
+			msg.From = r.id
+			msg.To = peer
+			r.msgs = append(r.msgs, msg)
+		}
 	}
-	r.Vote = 0
-	r.electionElapsed = 0
 }
 
 func (r *Raft) handleRequestVote(m pb.Message) {
