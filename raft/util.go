@@ -17,6 +17,7 @@ package raft
 import (
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"os/exec"
 	"sort"
@@ -24,6 +25,10 @@ import (
 
 	pb "github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
 )
+
+func randTime() int {
+	return int(rand.Int63()) % 10
+}
 
 func min(a, b uint64) uint64 {
 	if a > b {
