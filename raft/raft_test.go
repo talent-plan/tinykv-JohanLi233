@@ -61,7 +61,12 @@ func TestProgressLeader2AB(t *testing.T) {
 	r.becomeLeader()
 
 	// Send proposals to r1. The first 5 entries should be appended to the log.
-	propMsg := pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("foo")}}}
+	propMsg := pb.Message{
+		From:    1,
+		To:      1,
+		MsgType: pb.MessageType_MsgPropose,
+		Entries: []*pb.Entry{{Data: []byte("foo")}},
+	}
 	for i := 0; i < 5; i++ {
 		if pr := r.Prs[r.id]; pr.Match != uint64(i+1) || pr.Next != pr.Match+1 {
 			t.Errorf("unexpected progress %v", pr)
@@ -256,16 +261,31 @@ func TestLogReplication2AB(t *testing.T) {
 		{
 			newNetwork(nil, nil, nil),
 			[]pb.Message{
-				{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("somedata")}}},
+				{
+					From:    1,
+					To:      1,
+					MsgType: pb.MessageType_MsgPropose,
+					Entries: []*pb.Entry{{Data: []byte("somedata")}},
+				},
 			},
 			2,
 		},
 		{
 			newNetwork(nil, nil, nil),
 			[]pb.Message{
-				{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("somedata")}}},
+				{
+					From:    1,
+					To:      1,
+					MsgType: pb.MessageType_MsgPropose,
+					Entries: []*pb.Entry{{Data: []byte("somedata")}},
+				},
 				{From: 2, To: 2, MsgType: pb.MessageType_MsgHup},
-				{From: 1, To: 2, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("somedata")}}},
+				{
+					From:    1,
+					To:      2,
+					MsgType: pb.MessageType_MsgPropose,
+					Entries: []*pb.Entry{{Data: []byte("somedata")}},
+				},
 			},
 			4,
 		},
@@ -282,7 +302,13 @@ func TestLogReplication2AB(t *testing.T) {
 			sm := x.(*Raft)
 
 			if sm.RaftLog.committed != tt.wcommitted {
-				t.Errorf("#%d.%d: committed = %d, want %d", i, j, sm.RaftLog.committed, tt.wcommitted)
+				t.Errorf(
+					"#%d.%d: committed = %d, want %d",
+					i,
+					j,
+					sm.RaftLog.committed,
+					tt.wcommitted,
+				)
 			}
 
 			ents := []pb.Entry{}
@@ -309,8 +335,22 @@ func TestLogReplication2AB(t *testing.T) {
 func TestSingleNodeCommit2AB(t *testing.T) {
 	tt := newNetwork(nil)
 	tt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgHup})
-	tt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("some data")}}})
-	tt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("some data")}}})
+	tt.send(
+		pb.Message{
+			From:    1,
+			To:      1,
+			MsgType: pb.MessageType_MsgPropose,
+			Entries: []*pb.Entry{{Data: []byte("some data")}},
+		},
+	)
+	tt.send(
+		pb.Message{
+			From:    1,
+			To:      1,
+			MsgType: pb.MessageType_MsgPropose,
+			Entries: []*pb.Entry{{Data: []byte("some data")}},
+		},
+	)
 
 	sm := tt.peers[1].(*Raft)
 	if sm.RaftLog.committed != 3 {
@@ -329,8 +369,22 @@ func TestCommitWithoutNewTermEntry2AB(t *testing.T) {
 	tt.cut(1, 4)
 	tt.cut(1, 5)
 
-	tt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("some data")}}})
-	tt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("some data")}}})
+	tt.send(
+		pb.Message{
+			From:    1,
+			To:      1,
+			MsgType: pb.MessageType_MsgPropose,
+			Entries: []*pb.Entry{{Data: []byte("some data")}},
+		},
+	)
+	tt.send(
+		pb.Message{
+			From:    1,
+			To:      1,
+			MsgType: pb.MessageType_MsgPropose,
+			Entries: []*pb.Entry{{Data: []byte("some data")}},
+		},
+	)
 
 	sm := tt.peers[1].(*Raft)
 	if sm.RaftLog.committed != 1 {
@@ -359,8 +413,22 @@ func TestCommitWithHeartbeat2AB(t *testing.T) {
 
 	// isolate node 5
 	tt.isolate(5)
-	tt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("some data")}}})
-	tt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("some data")}}})
+	tt.send(
+		pb.Message{
+			From:    1,
+			To:      1,
+			MsgType: pb.MessageType_MsgPropose,
+			Entries: []*pb.Entry{{Data: []byte("some data")}},
+		},
+	)
+	tt.send(
+		pb.Message{
+			From:    1,
+			To:      1,
+			MsgType: pb.MessageType_MsgPropose,
+			Entries: []*pb.Entry{{Data: []byte("some data")}},
+		},
+	)
 
 	sm := tt.peers[5].(*Raft)
 	if sm.RaftLog.committed != 1 {
@@ -454,7 +522,14 @@ func TestCandidateConcede2AB(t *testing.T) {
 
 	data := []byte("force follower")
 	// send a proposal to 3 to flush out a MessageType_MsgAppend to 1
-	tt.send(pb.Message{From: 3, To: 3, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: data}}})
+	tt.send(
+		pb.Message{
+			From:    3,
+			To:      3,
+			MsgType: pb.MessageType_MsgPropose,
+			Entries: []*pb.Entry{{Data: data}},
+		},
+	)
 	// send heartbeat; flush out commit
 	tt.send(pb.Message{From: 3, To: 3, MsgType: pb.MessageType_MsgBeat})
 
@@ -465,7 +540,11 @@ func TestCandidateConcede2AB(t *testing.T) {
 	if g := a.Term; g != 1 {
 		t.Errorf("term = %d, want %d", g, 1)
 	}
-	wlog := newLog(newMemoryStorageWithEnts([]pb.Entry{{}, {Data: nil, Term: 1, Index: 1}, {Term: 1, Index: 2, Data: data}}))
+	wlog := newLog(
+		newMemoryStorageWithEnts(
+			[]pb.Entry{{}, {Data: nil, Term: 1, Index: 1}, {Term: 1, Index: 2, Data: data}},
+		),
+	)
 	wlog.committed = 2
 	wantLog := ltoa(wlog)
 	for i, p := range tt.peers {
@@ -497,9 +576,24 @@ func TestOldMessages2AB(t *testing.T) {
 	tt.send(pb.Message{From: 2, To: 2, MsgType: pb.MessageType_MsgHup})
 	tt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgHup})
 	// pretend we're an old leader trying to make progress; this entry is expected to be ignored.
-	tt.send(pb.Message{From: 2, To: 1, MsgType: pb.MessageType_MsgAppend, Term: 2, Entries: []*pb.Entry{{Index: 3, Term: 2}}})
+	tt.send(
+		pb.Message{
+			From:    2,
+			To:      1,
+			MsgType: pb.MessageType_MsgAppend,
+			Term:    2,
+			Entries: []*pb.Entry{{Index: 3, Term: 2}},
+		},
+	)
 	// commit a new entry
-	tt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("somedata")}}})
+	tt.send(
+		pb.Message{
+			From:    1,
+			To:      1,
+			MsgType: pb.MessageType_MsgPropose,
+			Entries: []*pb.Entry{{Data: []byte("somedata")}},
+		},
+	)
 
 	ilog := newLog(
 		newMemoryStorageWithEnts([]pb.Entry{
@@ -538,11 +632,22 @@ func TestProposal2AB(t *testing.T) {
 
 		// promote 1 to become leader
 		tt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgHup})
-		tt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: data}}})
+		tt.send(
+			pb.Message{
+				From:    1,
+				To:      1,
+				MsgType: pb.MessageType_MsgPropose,
+				Entries: []*pb.Entry{{Data: data}},
+			},
+		)
 
 		wantLog := newLog(NewMemoryStorage())
 		if tt.success {
-			wantLog = newLog(newMemoryStorageWithEnts([]pb.Entry{{}, {Data: nil, Term: 1, Index: 1}, {Term: 1, Index: 2, Data: data}}))
+			wantLog = newLog(
+				newMemoryStorageWithEnts(
+					[]pb.Entry{{}, {Data: nil, Term: 1, Index: 1}, {Term: 1, Index: 2, Data: data}},
+				),
+			)
 			wantLog.committed = 2
 		}
 		base := ltoa(wantLog)
@@ -562,10 +667,10 @@ func TestProposal2AB(t *testing.T) {
 }
 
 // TestHandleMessageType_MsgAppend ensures:
-// 1. Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm.
-// 2. If an existing entry conflicts with a new one (same index but different terms),
-//    delete the existing entry and all that follow it; append any new entries not already in the log.
-// 3. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry).
+//  1. Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm.
+//  2. If an existing entry conflicts with a new one (same index but different terms),
+//     delete the existing entry and all that follow it; append any new entries not already in the log.
+//  3. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry).
 func TestHandleMessageType_MsgAppend2AB(t *testing.T) {
 	tests := []struct {
 		m       pb.Message
@@ -574,21 +679,111 @@ func TestHandleMessageType_MsgAppend2AB(t *testing.T) {
 		wReject bool
 	}{
 		// Ensure 1
-		{pb.Message{MsgType: pb.MessageType_MsgAppend, Term: 3, LogTerm: 3, Index: 2, Commit: 3}, 2, 0, true}, // previous log mismatch
-		{pb.Message{MsgType: pb.MessageType_MsgAppend, Term: 3, LogTerm: 3, Index: 3, Commit: 3}, 2, 0, true}, // previous log non-exist
+		{
+			pb.Message{MsgType: pb.MessageType_MsgAppend, Term: 3, LogTerm: 3, Index: 2, Commit: 3},
+			2,
+			0,
+			true,
+		}, // previous log mismatch
+		{
+			pb.Message{MsgType: pb.MessageType_MsgAppend, Term: 3, LogTerm: 3, Index: 3, Commit: 3},
+			2,
+			0,
+			true,
+		}, // previous log non-exist
 
 		// Ensure 2
-		{pb.Message{MsgType: pb.MessageType_MsgAppend, Term: 2, LogTerm: 1, Index: 1, Commit: 1}, 2, 1, false},
-		{pb.Message{MsgType: pb.MessageType_MsgAppend, Term: 2, LogTerm: 0, Index: 0, Commit: 1, Entries: []*pb.Entry{{Index: 1, Term: 2}}}, 1, 1, false},
-		{pb.Message{MsgType: pb.MessageType_MsgAppend, Term: 2, LogTerm: 2, Index: 2, Commit: 3, Entries: []*pb.Entry{{Index: 3, Term: 2}, {Index: 4, Term: 2}}}, 4, 3, false},
-		{pb.Message{MsgType: pb.MessageType_MsgAppend, Term: 2, LogTerm: 2, Index: 2, Commit: 4, Entries: []*pb.Entry{{Index: 3, Term: 2}}}, 3, 3, false},
-		{pb.Message{MsgType: pb.MessageType_MsgAppend, Term: 2, LogTerm: 1, Index: 1, Commit: 4, Entries: []*pb.Entry{{Index: 2, Term: 2}}}, 2, 2, false},
+		{
+			pb.Message{MsgType: pb.MessageType_MsgAppend, Term: 2, LogTerm: 1, Index: 1, Commit: 1},
+			2,
+			1,
+			false,
+		},
+		{
+			pb.Message{
+				MsgType: pb.MessageType_MsgAppend,
+				Term:    2,
+				LogTerm: 0,
+				Index:   0,
+				Commit:  1,
+				Entries: []*pb.Entry{{Index: 1, Term: 2}},
+			},
+			1,
+			1,
+			false,
+		},
+		{
+			pb.Message{
+				MsgType: pb.MessageType_MsgAppend,
+				Term:    2,
+				LogTerm: 2,
+				Index:   2,
+				Commit:  3,
+				Entries: []*pb.Entry{{Index: 3, Term: 2}, {Index: 4, Term: 2}},
+			},
+			4,
+			3,
+			false,
+		},
+		{
+			pb.Message{
+				MsgType: pb.MessageType_MsgAppend,
+				Term:    2,
+				LogTerm: 2,
+				Index:   2,
+				Commit:  4,
+				Entries: []*pb.Entry{{Index: 3, Term: 2}},
+			},
+			3,
+			3,
+			false,
+		},
+		{
+			pb.Message{
+				MsgType: pb.MessageType_MsgAppend,
+				Term:    2,
+				LogTerm: 1,
+				Index:   1,
+				Commit:  4,
+				Entries: []*pb.Entry{{Index: 2, Term: 2}},
+			},
+			2,
+			2,
+			false,
+		},
 
 		// Ensure 3
-		{pb.Message{MsgType: pb.MessageType_MsgAppend, Term: 2, LogTerm: 1, Index: 1, Commit: 3}, 2, 1, false},                                            // match entry 1, commit up to last new entry 1
-		{pb.Message{MsgType: pb.MessageType_MsgAppend, Term: 2, LogTerm: 1, Index: 1, Commit: 3, Entries: []*pb.Entry{{Index: 2, Term: 2}}}, 2, 2, false}, // match entry 1, commit up to last new entry 2
-		{pb.Message{MsgType: pb.MessageType_MsgAppend, Term: 2, LogTerm: 2, Index: 2, Commit: 3}, 2, 2, false},                                            // match entry 2, commit up to last new entry 2
-		{pb.Message{MsgType: pb.MessageType_MsgAppend, Term: 2, LogTerm: 2, Index: 2, Commit: 4}, 2, 2, false},                                            // commit up to log.last()
+		{
+			pb.Message{MsgType: pb.MessageType_MsgAppend, Term: 2, LogTerm: 1, Index: 1, Commit: 3},
+			2,
+			1,
+			false,
+		}, // match entry 1, commit up to last new entry 1
+		{
+			pb.Message{
+				MsgType: pb.MessageType_MsgAppend,
+				Term:    2,
+				LogTerm: 1,
+				Index:   1,
+				Commit:  3,
+				Entries: []*pb.Entry{{Index: 2, Term: 2}},
+			},
+			2,
+			2,
+			false,
+		}, // match entry 1, commit up to last new entry 2
+		{
+			pb.Message{MsgType: pb.MessageType_MsgAppend, Term: 2, LogTerm: 2, Index: 2, Commit: 3},
+			2,
+			2,
+			false,
+		}, // match entry 2, commit up to last new entry 2
+		{
+			pb.Message{MsgType: pb.MessageType_MsgAppend, Term: 2, LogTerm: 2, Index: 2, Commit: 4},
+			2,
+			2,
+			false,
+		}, // commit up to log.last()
 	}
 
 	for i, tt := range tests {
@@ -661,7 +856,9 @@ func TestRecvMessageType_MsgRequestVote2AB(t *testing.T) {
 		sm := newTestRaft(1, []uint64{1, 2}, 10, 1, NewMemoryStorage())
 		sm.State = tt.state
 		sm.Vote = tt.voteFor
-		sm.RaftLog = newLog(newMemoryStorageWithEnts([]pb.Entry{{}, {Index: 1, Term: 2}, {Index: 2, Term: 2}}))
+		sm.RaftLog = newLog(
+			newMemoryStorageWithEnts([]pb.Entry{{}, {Index: 1, Term: 2}, {Index: 2, Term: 2}}),
+		)
 
 		// raft.Term is greater than or equal to raft.RaftLog.lastTerm. In this
 		// test we're only testing MessageType_MsgRequestVote responses when the campaigning node
@@ -677,7 +874,9 @@ func TestRecvMessageType_MsgRequestVote2AB(t *testing.T) {
 		}
 		term := max(lterm, tt.logTerm)
 		sm.Term = term
-		sm.Step(pb.Message{MsgType: msgType, Term: term, From: 2, Index: tt.index, LogTerm: tt.logTerm})
+		sm.Step(
+			pb.Message{MsgType: msgType, Term: term, From: 2, Index: tt.index, LogTerm: tt.logTerm},
+		)
 
 		msgs := sm.readMessages()
 		if g := len(msgs); g != 1 {
@@ -734,7 +933,13 @@ func TestAllServerStepdown2AB(t *testing.T) {
 				t.Errorf("#%d.%d index = %v , want %v", i, j, sm.RaftLog.LastIndex(), tt.windex)
 			}
 			if uint64(len(sm.RaftLog.allEntries())) != tt.windex {
-				t.Errorf("#%d.%d len(ents) = %v , want %v", i, j, len(sm.RaftLog.allEntries()), tt.windex)
+				t.Errorf(
+					"#%d.%d len(ents) = %v , want %v",
+					i,
+					j,
+					len(sm.RaftLog.allEntries()),
+					tt.windex,
+				)
 			}
 			wlead := uint64(2)
 			if msgType == pb.MessageType_MsgRequestVote {
@@ -919,7 +1124,14 @@ func TestHeartbeatUpdateCommit2AB(t *testing.T) {
 		nt.isolate(1)
 		// propose log to old leader should fail
 		for i := 0; i < tt.failCnt; i++ {
-			nt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}})
+			nt.send(
+				pb.Message{
+					From:    1,
+					To:      1,
+					MsgType: pb.MessageType_MsgPropose,
+					Entries: []*pb.Entry{{}},
+				},
+			)
 		}
 		if sm1.RaftLog.committed > 1 {
 			t.Fatalf("#%d: unexpected commit: %d", i, sm1.RaftLog.committed)
@@ -927,7 +1139,14 @@ func TestHeartbeatUpdateCommit2AB(t *testing.T) {
 		// propose log to cluster should success
 		nt.send(pb.Message{From: 2, To: 2, MsgType: pb.MessageType_MsgHup})
 		for i := 0; i < tt.successCnt; i++ {
-			nt.send(pb.Message{From: 2, To: 2, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}})
+			nt.send(
+				pb.Message{
+					From:    2,
+					To:      2,
+					MsgType: pb.MessageType_MsgPropose,
+					Entries: []*pb.Entry{{}},
+				},
+			)
 		}
 		wCommit := uint64(2 + tt.successCnt) // 2 elctions
 		if sm2.RaftLog.committed != wCommit {
@@ -960,7 +1179,9 @@ func TestRecvMessageType_MsgBeat2AA(t *testing.T) {
 
 	for i, tt := range tests {
 		sm := newTestRaft(1, []uint64{1, 2, 3}, 10, 1, NewMemoryStorage())
-		sm.RaftLog = newLog(newMemoryStorageWithEnts([]pb.Entry{{}, {Index: 1, Term: 0}, {Index: 2, Term: 1}}))
+		sm.RaftLog = newLog(
+			newMemoryStorageWithEnts([]pb.Entry{{}, {Index: 1, Term: 0}, {Index: 2, Term: 1}}),
+		)
 		sm.Term = 1
 		sm.State = tt.state
 		sm.Step(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgBeat})
@@ -988,7 +1209,14 @@ func TestLeaderIncreaseNext2AB(t *testing.T) {
 	nt := newNetwork(sm, nil, nil)
 	nt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgHup})
 
-	nt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("somedata")}}})
+	nt.send(
+		pb.Message{
+			From:    1,
+			To:      1,
+			MsgType: pb.MessageType_MsgPropose,
+			Entries: []*pb.Entry{{Data: []byte("somedata")}},
+		},
+	)
 
 	p := sm.Prs[2]
 	if p.Next != wnext {
@@ -1013,7 +1241,11 @@ func TestRestoreSnapshot2C(t *testing.T) {
 		t.Errorf("log.lastIndex = %d, want %d", sm.RaftLog.LastIndex(), s.Metadata.Index)
 	}
 	if mustTerm(sm.RaftLog.Term(s.Metadata.Index)) != s.Metadata.Term {
-		t.Errorf("log.lastTerm = %d, want %d", mustTerm(sm.RaftLog.Term(s.Metadata.Index)), s.Metadata.Term)
+		t.Errorf(
+			"log.lastTerm = %d, want %d",
+			mustTerm(sm.RaftLog.Term(s.Metadata.Index)),
+			s.Metadata.Term,
+		)
 	}
 	sg := nodes(sm)
 	if !reflect.DeepEqual(sg, s.Metadata.ConfState.Nodes) {
@@ -1064,7 +1296,14 @@ func TestProvideSnap2C(t *testing.T) {
 
 	// force set the next of node 2 to less than the SnapshotMetadata.Index, so that node 2 needs a snapshot
 	sm.Prs[2].Next = 10
-	sm.Step(pb.Message{From: 2, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("somedata")}}})
+	sm.Step(
+		pb.Message{
+			From:    2,
+			To:      1,
+			MsgType: pb.MessageType_MsgPropose,
+			Entries: []*pb.Entry{{Data: []byte("somedata")}},
+		},
+	)
 
 	msgs := sm.readMessages()
 	if len(msgs) != 1 {
@@ -1129,7 +1368,14 @@ func TestSlowNodeRestore2C(t *testing.T) {
 
 	nt.isolate(3)
 	for j := 0; j <= 100; j++ {
-		nt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}})
+		nt.send(
+			pb.Message{
+				From:    1,
+				To:      1,
+				MsgType: pb.MessageType_MsgPropose,
+				Entries: []*pb.Entry{{}},
+			},
+		)
 	}
 	lead := nt.peers[1].(*Raft)
 	nextEnts(lead, nt.storage[1])
@@ -1143,14 +1389,22 @@ func TestSlowNodeRestore2C(t *testing.T) {
 	nt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgBeat})
 
 	// trigger a snapshot
-	nt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}})
+	nt.send(
+		pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}},
+	)
 
 	follower := nt.peers[3].(*Raft)
 
 	// trigger a commit
-	nt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}})
+	nt.send(
+		pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}},
+	)
 	if follower.RaftLog.committed != lead.RaftLog.committed {
-		t.Errorf("follower.committed = %d, want %d", follower.RaftLog.committed, lead.RaftLog.committed)
+		t.Errorf(
+			"follower.committed = %d, want %d",
+			follower.RaftLog.committed,
+			lead.RaftLog.committed,
+		)
 	}
 }
 
@@ -1289,7 +1543,9 @@ func TestLeaderTransferToUpToDateNode3A(t *testing.T) {
 	checkLeaderTransferState(t, lead, StateFollower, 2)
 
 	// After some log replication, transfer leadership back to 1.
-	nt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}})
+	nt.send(
+		pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}},
+	)
 
 	nt.send(pb.Message{From: 1, To: 2, MsgType: pb.MessageType_MsgTransferLeader})
 
@@ -1317,7 +1573,9 @@ func TestLeaderTransferToUpToDateNodeFromFollower3A(t *testing.T) {
 	checkLeaderTransferState(t, lead, StateFollower, 2)
 
 	// After some log replication, transfer leadership back to 1.
-	nt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}})
+	nt.send(
+		pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}},
+	)
 
 	nt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgTransferLeader})
 
@@ -1329,7 +1587,9 @@ func TestLeaderTransferToSlowFollower3A(t *testing.T) {
 	nt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgHup})
 
 	nt.isolate(3)
-	nt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}})
+	nt.send(
+		pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}},
+	)
 
 	nt.recover()
 	lead := nt.peers[1].(*Raft)
@@ -1349,7 +1609,9 @@ func TestLeaderTransferAfterSnapshot3A(t *testing.T) {
 
 	nt.isolate(3)
 
-	nt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}})
+	nt.send(
+		pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}},
+	)
 	lead := nt.peers[1].(*Raft)
 	nextEnts(lead, nt.storage[1])
 	nt.storage[1].CreateSnapshot(lead.RaftLog.applied, &pb.ConfState{Nodes: nodes(lead)}, nil)
@@ -1363,7 +1625,9 @@ func TestLeaderTransferAfterSnapshot3A(t *testing.T) {
 	// Transfer leadership to 3 when node 3 is lack of snapshot.
 	nt.send(pb.Message{From: 3, To: 1, MsgType: pb.MessageType_MsgTransferLeader})
 	// Send pb.MessageType_MsgHeartbeatResponse to leader to trigger a snapshot for node 3.
-	nt.send(pb.Message{From: 3, To: 1, MsgType: pb.MessageType_MsgHeartbeatResponse, Term: lead.Term})
+	nt.send(
+		pb.Message{From: 3, To: 1, MsgType: pb.MessageType_MsgHeartbeatResponse, Term: lead.Term},
+	)
 
 	checkLeaderTransferState(t, lead, StateFollower, 3)
 }
@@ -1452,7 +1716,13 @@ func TestLeaderTransferSecondTransferToAnotherNode3A(t *testing.T) {
 
 func checkLeaderTransferState(t *testing.T, r *Raft, state StateType, lead uint64) {
 	if r.State != state || r.Lead != lead {
-		t.Fatalf("after transferring, node has state %v lead %v, want state %v lead %v", r.State, r.Lead, state, lead)
+		t.Fatalf(
+			"after transferring, node has state %v lead %v, want state %v lead %v",
+			r.State,
+			r.Lead,
+			state,
+			lead,
+		)
 	}
 }
 

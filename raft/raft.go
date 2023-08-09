@@ -201,6 +201,7 @@ func (r *Raft) sendAppend(to uint64) bool {
 		sendEntries = append(sendEntries, &entry)
 	}
 	msg := pb.Message{
+		MsgType: pb.MessageType_MsgAppend,
 		To:      to,
 		Entries: sendEntries,
 	}
@@ -299,6 +300,9 @@ func (r *Raft) becomeLeader() {
 		r.Prs[peer].Next = 0
 		r.Prs[peer].Match = 0
 	}
+	for peer := range r.Prs {
+		r.sendAppend(peer)
+	}
 }
 
 // Step the entrance of handle message, see `MessageType`
@@ -338,10 +342,15 @@ func (r *Raft) Step(m pb.Message) error {
 // handleAppendEntries handle AppendEntries RPC request
 func (r *Raft) handleAppendEntries(m pb.Message) {
 	// Your Code Here (2A).
-	r.State = StateFollower
-	r.Term = m.Term
+	if r.State == StateCandidate {
+		r.becomeFollower(m.Term, m.From)
+	}
+	if m.Term > r.Term {
+		r.becomeFollower(m.Term, m.From)
+	}
 	r.electionElapsed = 0
 	r.PendingConfIndex = m.Index
+	r.Vote = 0
 	for _, entry := range m.Entries {
 		r.RaftLog.entries = append(r.RaftLog.entries, *entry)
 	}
@@ -352,11 +361,17 @@ func (r *Raft) handleAppendEntries(m pb.Message) {
 // handleHeartbeat handle Heartbeat RPC request
 func (r *Raft) handleHeartbeat(m pb.Message) {
 	// Your Code Here (2A).
-	r.Term = m.Term
+	if m.Term > r.Term {
+		r.becomeFollower(m.Term, m.From)
+	}
+	r.Vote = 0
 	r.electionElapsed = 0
 }
 
 func (r *Raft) handleRequestVote(m pb.Message) {
+	if m.Term > r.Term {
+		r.becomeFollower(m.Term, None)
+	}
 	msg := pb.Message{}
 	msg.MsgType = pb.MessageType_MsgRequestVoteResponse
 	msg.Term = r.Term
@@ -372,23 +387,20 @@ func (r *Raft) handleRequestVote(m pb.Message) {
 }
 
 func (r *Raft) handleRequestVoteResponse(m pb.Message) {
-	// if m.Term > r.Term {
-	// 	r.becomeFollower(m.Term, 0)
-	// }
+	if m.Term > r.Term {
+		r.becomeFollower(m.Term, None)
+	}
 	votes := 0
 	if !m.Reject {
 		r.votes[m.From] = true
 	}
 	if r.State == StateCandidate {
-		for k, v := range r.votes {
-			if k == r.id {
-				continue
-			}
+		for _, v := range r.votes {
 			if v {
 				votes += 1
 			}
 		}
-		if (votes+1)*2 > len(r.Prs) {
+		if (votes)*2 > len(r.Prs) {
 			r.becomeLeader()
 		}
 	}
