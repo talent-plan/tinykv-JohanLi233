@@ -254,6 +254,7 @@ func (r *Raft) tick() {
 func (r *Raft) becomeFollower(term uint64, lead uint64) {
 	// Your Code Here (2A).
 	r.State = StateFollower
+	r.Vote = 0
 	r.Lead = lead
 	if term > r.Term {
 		r.Term = term
@@ -296,11 +297,10 @@ func (r *Raft) becomeLeader() {
 	// NOTE: Leader should propose a noop entry on its term
 	r.State = StateLeader
 	r.Lead = r.id
+	r.Vote = 0
 	for peer := range r.Prs {
 		r.Prs[peer].Next = 0
 		r.Prs[peer].Match = 0
-	}
-	for peer := range r.Prs {
 		r.sendAppend(peer)
 	}
 }
@@ -383,6 +383,7 @@ func (r *Raft) handleRequestVote(m pb.Message) {
 		return
 	}
 	msg.Reject = false
+	r.Vote = m.From
 	r.msgs = append(r.msgs, msg)
 }
 
