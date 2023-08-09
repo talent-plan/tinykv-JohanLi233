@@ -16,7 +16,6 @@ package raft
 
 import (
 	"errors"
-	"fmt"
 
 	pb "github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
 )
@@ -158,6 +157,8 @@ type Raft struct {
 	// value.
 	// (Used in 3A conf change)
 	PendingConfIndex uint64
+
+	realElectionTimeout int
 }
 
 // newRaft return a raft peer with the given config
@@ -181,9 +182,14 @@ func newRaft(c *Config) *Raft {
 	}
 	rf.electionElapsed = 0
 	rf.heartbeatElapsed = 0
+	rf.realElectionTimeout = randTime(rf.electionTimeout)
 	rf.RaftLog = &RaftLog{}
 	rf.RaftLog.committed = 0
 	rf.RaftLog.applied = 0
+	dummy := pb.Entry{}
+	dummy.Data = nil
+	dummy.Term = 0
+	dummy.Index = 0
 	rf.RaftLog.storage = c.Storage
 	rf.State = StateFollower
 	rf.Term = 0
@@ -195,7 +201,7 @@ func newRaft(c *Config) *Raft {
 // current commit index to the given peer. Returns true if a message was sent.
 func (r *Raft) sendAppend(to uint64) bool {
 	// Your Code Here (2A).
-	lastIndex := r.Prs[to].Next
+	lastIndex := r.Prs[to].Next - 1
 	entries := r.RaftLog.entries[lastIndex:]
 	sendEntries := []*pb.Entry{}
 	for _, entry := range entries {
@@ -223,7 +229,8 @@ func (r *Raft) sendHeartbeat(to uint64) {
 
 func (r *Raft) electionTick() {
 	r.electionElapsed += 1
-	if r.electionElapsed > r.electionTimeout+randTime(r.electionTimeout) {
+	if r.electionElapsed >= r.realElectionTimeout {
+		r.realElectionTimeout = randTime(r.electionTimeout)
 		r.startElection()
 		r.electionElapsed = 0
 	}
@@ -306,9 +313,13 @@ func (r *Raft) becomeLeader() {
 	r.State = StateLeader
 	r.Lead = r.id
 	r.Vote = 0
-	r.RaftLog.entries = append(r.RaftLog.entries, pb.Entry{})
+	dummy := pb.Entry{}
+	dummy.Term = r.Term
+	dummy.Index = r.RaftLog.LastIndex() + 1
+	dummy.Data = nil
+	r.RaftLog.entries = append(r.RaftLog.entries, dummy)
 	for peer := range r.Prs {
-		r.Prs[peer].Next = 0
+		r.Prs[peer].Next = dummy.Index + 1
 		r.Prs[peer].Match = 0
 		r.sendAppend(peer)
 	}
@@ -324,11 +335,9 @@ func (r *Raft) Step(m pb.Message) error {
 	case 1: //MsgBeat
 		r.handleHeartbeat(m)
 	case 2: //MsgPropose
-		fmt.Println(2)
 	case 3: //MsgAppend
 		r.handleAppendEntries(m)
 	case 4: //MsgAppendResponse
-		fmt.Println(4)
 	case 5: //RequestVote
 		r.handleRequestVote(m)
 
@@ -338,10 +347,8 @@ func (r *Raft) Step(m pb.Message) error {
 	case 7: //MsgSnapshot
 
 	case 8: //MsgHeartbeat
-		fmt.Println(8)
 
 	case 9: //MsgHeartbeat
-		fmt.Println(9)
 
 	case 11: //MsgTransferLeader
 

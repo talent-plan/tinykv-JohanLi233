@@ -27,7 +27,7 @@ import (
 )
 
 func randTime(base int) int {
-	return int(rand.Int63()) % base
+	return base + rand.Intn(base)
 }
 
 func min(a, b uint64) uint64 {
