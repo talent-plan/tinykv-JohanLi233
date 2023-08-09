@@ -16,7 +16,6 @@ package raft
 
 import (
 	"errors"
-	"fmt"
 
 	pb "github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
 )
@@ -171,6 +170,7 @@ func newRaft(c *Config) *Raft {
 	rf.electionTimeout = c.ElectionTick
 	rf.heartbeatTimeout = c.HeartbeatTick
 	rf.Prs = make(map[uint64]*Progress)
+	rf.votes = make(map[uint64]bool)
 	for _, peer := range c.peers {
 		prg := &Progress{
 			Next:  0,
@@ -229,6 +229,10 @@ func (r *Raft) tick() {
 			r.becomeCandidate()
 		}
 	case StateCandidate:
+		r.electionElapsed += 1
+		if r.electionElapsed >= r.electionTimeout {
+			r.becomeCandidate()
+		}
 	case StateLeader:
 		r.heartbeatElapsed += 1
 		if r.heartbeatElapsed >= r.heartbeatTimeout {
@@ -256,8 +260,26 @@ func (r *Raft) becomeFollower(term uint64, lead uint64) {
 // becomeCandidate transform this peer's state to candidate
 func (r *Raft) becomeCandidate() {
 	// Your Code Here (2A).
+	r.msgs = []pb.Message{}
+	r.electionElapsed = 0
 	r.State = StateCandidate
 	r.Term++
+	r.votes[r.id] = true
+	r.Vote = 1
+	for peer := range r.Prs {
+		if peer == r.id {
+			continue
+		}
+		msg := pb.Message{}
+		msg.MsgType = pb.MessageType_MsgRequestVote
+		msg.To = peer
+		msg.From = r.id
+		msg.Term = r.Term
+		r.msgs = append(r.msgs, msg)
+	}
+	if 2*r.Vote > uint64(len(r.Prs)) {
+		r.becomeLeader()
+	}
 }
 
 // becomeLeader transform this peer's state to leader
@@ -284,23 +306,22 @@ func (r *Raft) Step(m pb.Message) error {
 	case 2: //MsgPropose
 	case 3: //MsgAppend
 		r.handleAppendEntries(m)
-	case 4:
+	case 4: //MsgAppendResponse
 
-	case 5:
+	case 5: //RequestVote
 
-	case 6:
+	case 6: //RequestVoteRespone
+		r.handleRequestVoteResponse(m)
 
-	case 7:
+	case 7: //MsgSnapshot
 
-	case 8:
+	case 8: //MsgHeartbeat
 
-	case 9:
+	case 9: //MsgHeartbeatRequest
 
-	case 10:
+	case 11: //MsgTransferLeader
 
-	case 11:
-
-	case 12:
+	case 12: //MsgTimeout
 
 	}
 	return nil
@@ -311,8 +332,8 @@ func (r *Raft) handleAppendEntries(m pb.Message) {
 	// Your Code Here (2A).
 	r.State = StateFollower
 	r.Term = m.Term
+	r.electionElapsed = 0
 	r.PendingConfIndex = m.Index
-	fmt.Println(m.Entries)
 	for _, entry := range m.Entries {
 		r.RaftLog.entries = append(r.RaftLog.entries, *entry)
 	}
@@ -324,6 +345,29 @@ func (r *Raft) handleAppendEntries(m pb.Message) {
 func (r *Raft) handleHeartbeat(m pb.Message) {
 	// Your Code Here (2A).
 	r.Term = m.Term
+	r.electionElapsed = 0
+}
+
+func (r *Raft) handleRequestVoteResponse(m pb.Message) {
+	// if m.Term > r.Term {
+	// 	r.becomeFollower(m.Term, 0)
+	// }
+	if !m.Reject {
+		r.votes[m.From] = true
+	}
+	if r.State == StateCandidate {
+		for k, v := range r.votes {
+			if k == r.id {
+				continue
+			}
+			if v {
+				r.Vote++
+			}
+		}
+		if r.Vote*2 > uint64(len(r.Prs)) {
+			r.becomeLeader()
+		}
+	}
 }
 
 // handleSnapshot handle Snapshot RPC request
