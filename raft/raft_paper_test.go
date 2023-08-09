@@ -417,8 +417,6 @@ func TestLeaderStartReplication2AB(t *testing.T) {
 			Commit:  li,
 		},
 	}
-	fmt.Println(msgs)
-	fmt.Println(wmsgs)
 	if !reflect.DeepEqual(msgs, wmsgs) {
 		t.Errorf("msgs = %+v, want %+v", msgs, wmsgs)
 	}

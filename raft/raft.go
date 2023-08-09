@@ -226,13 +226,13 @@ func (r *Raft) handlePropose(m pb.Message) {
 // current commit index to the given peer. Returns true if a message was sent.
 func (r *Raft) sendAppend(to uint64) bool {
 	// Your Code Here (2A).
-	lastIndex := r.RaftLog.LastIndex()
-	entries := r.RaftLog.entries[lastIndex:]
+	nextIndex := r.Prs[to].Next
+	entries := r.RaftLog.entries[nextIndex:]
 	sendEntries := []*pb.Entry{}
 	for _, entry := range entries {
 		sendEntries = append(sendEntries, &entry)
 	}
-	lastLogTerm, _ := r.RaftLog.Term(lastIndex)
+	lastLogTerm, _ := r.RaftLog.Term(nextIndex)
 	msg := pb.Message{
 		MsgType: pb.MessageType_MsgAppend,
 		From:    r.id,
@@ -240,11 +240,10 @@ func (r *Raft) sendAppend(to uint64) bool {
 		Term:    r.Term,
 		LogTerm: lastLogTerm,
 		Entries: sendEntries,
-		Index:   lastIndex,
+		Index:   nextIndex - 1,
 		Commit:  r.RaftLog.committed,
 	}
 	r.msgs = append(r.msgs, msg)
-	r.checkLeaderCommit()
 	return true
 }
 
@@ -351,9 +350,8 @@ func (r *Raft) becomeLeader() {
 	dummy.Data = nil
 	r.RaftLog.entries = append(r.RaftLog.entries, dummy)
 	for peer := range r.Prs {
-		r.Prs[peer].Next = dummy.Index + 1
+		r.Prs[peer].Next = dummy.Index
 		r.Prs[peer].Match = 0
-		// r.sendAppend(peer)
 	}
 }
 
@@ -393,7 +391,18 @@ func (r *Raft) Step(m pb.Message) error {
 }
 
 func (r *Raft) handleAppendEntriesResponse(m pb.Message) {
-
+	if m.Term > r.Term {
+		r.becomeFollower(m.Term, None)
+	}
+	if !m.Reject {
+		match := m.Index
+		next := match + 1
+		r.Prs[m.From].Next = max(r.Prs[m.From].Next, next)
+		r.Prs[m.From].Match = max(r.Prs[m.From].Match, match)
+	} else if m.Reject {
+		r.Prs[m.From].Next--
+	}
+	r.checkLeaderCommit()
 }
 
 // handleAppendEntries handle AppendEntries RPC request
@@ -421,6 +430,8 @@ func (r *Raft) handleAppendEntries(m pb.Message) {
 		r.RaftLog.entries = append(r.RaftLog.entries, *entry)
 	}
 	r.RaftLog.committed = min(m.Commit, r.RaftLog.LastIndex())
+	msg.Index = r.RaftLog.LastIndex()
+	r.msgs = append(r.msgs, msg)
 }
 
 // handleHeartbeat handle Heartbeat RPC request
