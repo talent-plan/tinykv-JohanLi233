@@ -356,6 +356,9 @@ func (r *Raft) becomeLeader() {
 	for peer := range r.Prs {
 		r.Prs[peer].Next = dummy.Index
 		r.Prs[peer].Match = 0
+		if peer != r.id {
+			r.sendAppend(peer)
+		}
 	}
 }
 
@@ -430,10 +433,35 @@ func (r *Raft) handleAppendEntries(m pb.Message) {
 	if m.Term > r.Term {
 		r.becomeFollower(m.Term, m.From)
 	}
-	for _, entry := range m.Entries {
-		r.RaftLog.entries = append(r.RaftLog.entries, *entry)
+	if r.RaftLog.LastIndex() < m.Index {
+		msg.Reject = true
+		r.msgs = append(r.msgs, msg)
+		return
 	}
-	r.RaftLog.committed = min(m.Commit, r.RaftLog.LastIndex())
+	logTerm, _ := r.RaftLog.Term(m.Index)
+	if logTerm != m.LogTerm {
+		msg.Reject = true
+		r.msgs = append(r.msgs, msg)
+		return
+	}
+
+	for idx, entry := range m.Entries {
+		logTerm, _ := r.RaftLog.Term(entry.Index)
+		if logTerm != entry.Term {
+			r.RaftLog.entries = r.RaftLog.entries[:entry.Index]
+			r.RaftLog.stabled = min(r.RaftLog.stabled, entry.Index-1)
+		}
+		if entry.Index > r.RaftLog.LastIndex() {
+			for i := idx; i < idx+len(m.Entries); i++ {
+				r.RaftLog.entries = append(r.RaftLog.entries, *m.Entries[i])
+			}
+			break
+		}
+	}
+
+	if m.Commit > r.RaftLog.committed {
+		r.RaftLog.committed = min(m.Commit, r.RaftLog.LastIndex())
+	}
 	msg.Index = r.RaftLog.LastIndex()
 	r.msgs = append(r.msgs, msg)
 }

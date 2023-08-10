@@ -54,24 +54,37 @@ type RaftLog struct {
 	pendingSnapshot *pb.Snapshot
 
 	// Your Data Here (2A).
+	firstIndex uint64
 }
 
 // newLog returns log using the given storage. It recovers the log
 // to the state that it just commits and applies the latest snapshot.
 func newLog(storage Storage) *RaftLog {
 	// Your Code Here (2A).
-	rf := RaftLog{}
-	rf.storage = storage
-	rf.committed = 0
-	rf.applied = 0
-	rf.stabled = 0
+	l := RaftLog{}
+	lo, _ := storage.FirstIndex()
+	hi, _ := storage.LastIndex()
+	entries, _ := storage.Entries(lo, hi+1)
+	l.storage = storage
 	dummy := pb.Entry{}
 	dummy.Data = nil
 	dummy.Term = 0
 	dummy.Index = 0
-	rf.entries = append(rf.entries, dummy)
-	rf.pendingSnapshot = nil
-	return &rf
+	l.entries = append(l.entries, dummy)
+	l.pendingSnapshot = nil
+	if hi == 0 {
+		l.committed = 0
+		l.applied = 0
+		l.stabled = 0
+		l.firstIndex = 0
+	} else {
+		l.entries = append(l.entries, entries...)
+		l.committed = hi
+		l.applied = lo - 1
+		l.stabled = hi
+		l.firstIndex = lo
+	}
+	return &l
 }
 
 // We need to compact the log entries in some point of time like
@@ -86,13 +99,7 @@ func (l *RaftLog) maybeCompact() {
 // note, this is one of the test stub functions you need to implement.
 func (l *RaftLog) allEntries() []pb.Entry {
 	// Your Code Here (2A).
-	temp := []pb.Entry{}
-	for _, entry := range l.entries {
-		if entry.Data != nil {
-			temp = append(temp, entry)
-		}
-	}
-	return temp
+	return l.entries[l.firstIndex:]
 }
 
 // unstableEntries return all the unstable entries
@@ -104,7 +111,7 @@ func (l *RaftLog) unstableEntries() []pb.Entry {
 // nextEnts returns all the committed but not applied entries
 func (l *RaftLog) nextEnts() (ents []pb.Entry) {
 	// Your Code Here (2A).
-	return l.entries[l.applied+1:]
+	return l.entries[l.applied+1 : l.committed+1]
 }
 
 // LastIndex return the last index of the log entries
