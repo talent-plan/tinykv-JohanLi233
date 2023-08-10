@@ -214,12 +214,16 @@ func (r *Raft) handlePropose(m pb.Message) {
 		entry.Index = r.RaftLog.LastIndex() + 1
 		r.RaftLog.entries = append(r.RaftLog.entries, *entry)
 	}
+	index := r.RaftLog.LastIndex()
+	r.Prs[r.id].Next = index + 1
+	r.Prs[r.id].Match = index
 	for peer := range r.Prs {
 		if peer == r.id {
 			continue
 		}
 		r.sendAppend(peer)
 	}
+	r.checkLeaderCommit()
 }
 
 // sendAppend sends an append RPC with new entries (if any) and the
