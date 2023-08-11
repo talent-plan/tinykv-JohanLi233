@@ -159,6 +159,7 @@ type Raft struct {
 	PendingConfIndex uint64
 
 	realElectionTimeout int
+	rejectCount         int
 }
 
 // newRaft return a raft peer with the given config
@@ -167,6 +168,7 @@ func newRaft(c *Config) *Raft {
 		panic(err.Error())
 	}
 	// Your Code Here (2A).
+	hardState, _, _ := c.Storage.InitialState()
 	rf := Raft{}
 	rf.id = c.ID
 	rf.electionTimeout = c.ElectionTick
@@ -183,51 +185,41 @@ func newRaft(c *Config) *Raft {
 	rf.electionElapsed = 0
 	rf.heartbeatElapsed = 0
 	rf.realElectionTimeout = randTime(rf.electionTimeout)
+	rf.rejectCount = 0
 	rf.RaftLog = newLog(c.Storage)
 	rf.State = StateFollower
-	rf.Term = 0
-	rf.Vote = 0
+	rf.Vote = hardState.Vote
+	rf.Term = hardState.Term
 	return &rf
 }
 
 func (r *Raft) checkLeaderCommit() {
-	if r.State != StateLeader {
-		return
-	}
-	count := make(map[uint64]int)
+	var N uint64 = r.RaftLog.firstIndex
 	for peer := range r.Prs {
-		N := r.Prs[peer].Match
-		if N > r.RaftLog.committed && r.RaftLog.entries[N].Term == r.Term {
-			count[N] += 1
-		}
+		N = max(N, r.Prs[peer].Match)
 	}
-	update := false
-	values := 0
-	init := false
-	var smallestBiggerKey uint64
-	for key, value := range count {
-		if !init {
-			smallestBiggerKey = key
+
+	for ; N > r.RaftLog.committed; N-- {
+		if r.RaftLog.entries[N].GetTerm() != r.Term {
+			continue
 		}
-		if key < smallestBiggerKey {
-			smallestBiggerKey = key
-		}
-		values += value
-		if (value)*2 > len(r.Prs) && key > r.RaftLog.committed {
-			r.RaftLog.committed = key
-			update = true
-		}
-	}
-	if !update && values*2 > len(r.Prs) {
-		r.RaftLog.committed = smallestBiggerKey
-		update = true
-	}
-	if update {
+
+		cnt := 0
 		for peer := range r.Prs {
-			if peer == r.id {
-				continue
+			if r.Prs[peer].Match >= N {
+				cnt++
 			}
-			r.sendAppend(peer)
+		}
+
+		if 2*cnt > len(r.Prs) {
+			r.RaftLog.committed = N
+			for peer := range r.Prs {
+				if peer == r.id {
+					continue
+				}
+				r.sendAppend(peer)
+			}
+			return
 		}
 	}
 }
@@ -379,6 +371,7 @@ func (r *Raft) becomeCandidate() {
 	// Your Code Here (2A).
 	r.State = StateCandidate
 	r.Term++
+	r.rejectCount = 0
 	r.votes = make(map[uint64]bool)
 	r.votes[r.id] = true
 	r.Vote = r.id
@@ -397,11 +390,14 @@ func (r *Raft) becomeLeader() {
 	dummy.Data = nil
 	r.RaftLog.entries = append(r.RaftLog.entries, dummy)
 	for peer := range r.Prs {
-		r.Prs[peer].Next = dummy.Index
-		r.Prs[peer].Match = 0
 		if peer != r.id {
+			r.Prs[peer].Next = dummy.Index
+			r.Prs[peer].Match = 0
 			r.sendAppend(peer)
+			continue
 		}
+		r.Prs[peer].Next = dummy.Index + 1
+		r.Prs[peer].Match = dummy.Index
 	}
 }
 
@@ -562,9 +558,6 @@ func (r *Raft) handleHeartbeatResponse(m pb.Message) {
 }
 
 func (r *Raft) handleRequestVote(m pb.Message) {
-	if m.Term > r.Term {
-		r.becomeFollower(m.Term, None)
-	}
 	msg := pb.Message{}
 	msg.MsgType = pb.MessageType_MsgRequestVoteResponse
 	msg.Term = r.Term
@@ -574,6 +567,10 @@ func (r *Raft) handleRequestVote(m pb.Message) {
 		msg.Reject = true
 		r.msgs = append(r.msgs, msg)
 		return
+	}
+	if m.Term > r.Term {
+		r.becomeFollower(m.Term, None)
+		msg.Term = r.Term
 	}
 	lastLog := r.RaftLog.entries[r.RaftLog.LastIndex()]
 	upToDate := m.LogTerm > lastLog.Term || (lastLog.Term == m.LogTerm && m.Index >= lastLog.Index)
@@ -590,12 +587,19 @@ func (r *Raft) handleRequestVote(m pb.Message) {
 func (r *Raft) handleRequestVoteResponse(m pb.Message) {
 	if m.Term > r.Term {
 		r.becomeFollower(m.Term, None)
+		return
 	}
 	votes := 0
-	if !m.Reject {
-		r.votes[m.From] = true
-	}
-	if r.State == StateCandidate {
+	if m.Term == r.Term && r.State == StateCandidate {
+		if !m.Reject {
+			r.votes[m.From] = true
+		} else {
+			r.rejectCount++
+		}
+		if r.rejectCount*2 > len(r.Prs) {
+			r.becomeFollower(r.Term, None)
+			return
+		}
 		for _, v := range r.votes {
 			if v {
 				votes += 1
@@ -603,6 +607,7 @@ func (r *Raft) handleRequestVoteResponse(m pb.Message) {
 		}
 		if (votes)*2 > len(r.Prs) {
 			r.becomeLeader()
+			return
 		}
 	}
 }

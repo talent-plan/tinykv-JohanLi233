@@ -76,7 +76,7 @@ func newLog(storage Storage) *RaftLog {
 	if hi == 0 {
 		l.applied = 0
 		l.stabled = 0
-		l.firstIndex = 0
+		l.firstIndex = 1
 	} else {
 		l.entries = append(l.entries, entries...)
 		l.applied = lo - 1
@@ -117,6 +117,10 @@ func (l *RaftLog) nextEnts() (ents []pb.Entry) {
 func (l *RaftLog) LastIndex() uint64 {
 	// Your Code Here (2A).
 	return l.entries[len(l.entries)-1].Index
+}
+
+func (l *RaftLog) LastTerm() uint64 {
+	return l.entries[len(l.entries)-1].Term
 }
 
 // Term return the term of the entry in the given index

@@ -160,6 +160,7 @@ func TestLeaderElectionOverwriteNewerLogs2AB(t *testing.T) {
 	// term is pushed ahead to 2.
 	n.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgHup})
 	sm1 := n.peers[1].(*Raft)
+	fmt.Println(sm1.Term)
 	if sm1.State != StateFollower {
 		t.Errorf("state = %s, want StateFollower", sm1.State)
 	}
@@ -169,18 +170,21 @@ func TestLeaderElectionOverwriteNewerLogs2AB(t *testing.T) {
 
 	// Node 1 campaigns again with a higher term. This time it succeeds.
 	n.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgHup})
+	fmt.Println(sm1.Term)
 	if sm1.State != StateLeader {
 		t.Errorf("state = %s, want StateLeader", sm1.State)
 	}
 	if sm1.Term != 3 {
 		t.Errorf("term = %d, want 3", sm1.Term)
 	}
+	fmt.Println(sm1.RaftLog.allEntries())
 
 	// Now all nodes agree on a log entry with term 1 at index 1 (and
 	// term 3 at index 2).
 	for i := range n.peers {
 		sm := n.peers[i].(*Raft)
 		entries := sm.RaftLog.allEntries()
+		fmt.Println(entries)
 		if len(entries) != 2 {
 			t.Fatalf("node %d: len(entries) == %d, want 2", i, len(entries))
 		}
