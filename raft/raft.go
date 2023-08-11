@@ -521,6 +521,7 @@ func (r *Raft) handleHeartbeat(m pb.Message) {
 
 	if m.GetTerm() < r.Term {
 		response.Reject = true
+		r.msgs = append(r.msgs, response)
 		return
 	}
 
@@ -532,6 +533,7 @@ func (r *Raft) handleHeartbeat(m pb.Message) {
 	if m.GetCommit() > r.RaftLog.LastIndex() { // commit index over flow
 		response.Reject = true
 		response.Index = r.RaftLog.LastIndex()
+		r.msgs = append(r.msgs, response)
 		return
 	}
 
