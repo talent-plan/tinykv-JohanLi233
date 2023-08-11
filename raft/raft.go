@@ -229,12 +229,9 @@ func (r *Raft) handlePropose(m pb.Message) {
 		return
 	}
 	for _, entry := range m.Entries {
-		newEntry := pb.Entry{}
-		newEntry.EntryType = entry.EntryType
-		newEntry.Term = r.Term
-		newEntry.Index = r.RaftLog.LastIndex() + 1
-		newEntry.Data = entry.Data
-		r.RaftLog.entries = append(r.RaftLog.entries, newEntry)
+		entry.Term = r.Term
+		entry.Index = r.RaftLog.LastIndex() + 1
+		r.RaftLog.entries = append(r.RaftLog.entries, *entry)
 	}
 	index := r.RaftLog.LastIndex()
 	r.Prs[r.id].Next = index + 1
