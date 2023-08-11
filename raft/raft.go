@@ -225,10 +225,16 @@ func (r *Raft) checkLeaderCommit() {
 }
 
 func (r *Raft) handlePropose(m pb.Message) {
+	if r.State != StateLeader {
+		return
+	}
 	for _, entry := range m.Entries {
-		entry.Term = r.Term
-		entry.Index = r.RaftLog.LastIndex() + 1
-		r.RaftLog.entries = append(r.RaftLog.entries, *entry)
+		newEntry := pb.Entry{}
+		newEntry.EntryType = entry.EntryType
+		newEntry.Term = r.Term
+		newEntry.Index = r.RaftLog.LastIndex() + 1
+		newEntry.Data = entry.Data
+		r.RaftLog.entries = append(r.RaftLog.entries, newEntry)
 	}
 	index := r.RaftLog.LastIndex()
 	r.Prs[r.id].Next = index + 1
