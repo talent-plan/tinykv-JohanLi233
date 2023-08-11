@@ -70,16 +70,15 @@ func newLog(storage Storage) *RaftLog {
 	dummy.Data = nil
 	dummy.Term = 0
 	dummy.Index = 0
+	l.committed = 0
 	l.entries = append(l.entries, dummy)
 	l.pendingSnapshot = nil
 	if hi == 0 {
-		l.committed = 0
 		l.applied = 0
 		l.stabled = 0
 		l.firstIndex = 0
 	} else {
 		l.entries = append(l.entries, entries...)
-		l.committed = hi
 		l.applied = lo - 1
 		l.stabled = hi
 		l.firstIndex = lo

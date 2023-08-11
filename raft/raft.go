@@ -202,11 +202,25 @@ func (r *Raft) checkLeaderCommit() {
 		}
 	}
 	update := false
+	values := 0
+	init := false
+	var smallestBiggerKey uint64
 	for key, value := range count {
+		if !init {
+			smallestBiggerKey = key
+		}
+		if key < smallestBiggerKey {
+			smallestBiggerKey = key
+		}
+		values += value
 		if (value)*2 > len(r.Prs) && key > r.RaftLog.committed {
 			r.RaftLog.committed = key
 			update = true
 		}
+	}
+	if !update && values*2 > len(r.Prs) {
+		r.RaftLog.committed = smallestBiggerKey
+		update = true
 	}
 	if update {
 		for peer := range r.Prs {
@@ -347,11 +361,15 @@ func (r *Raft) startElection() {
 		if peer == r.id {
 			continue
 		}
+		lastLogIndex := r.RaftLog.LastIndex()
+		lastLogTerm, _ := r.RaftLog.Term(lastLogIndex)
 		msg := pb.Message{}
 		msg.MsgType = pb.MessageType_MsgRequestVote
 		msg.To = peer
 		msg.From = r.id
 		msg.Term = r.Term
+		msg.Index = lastLogIndex
+		msg.LogTerm = lastLogTerm
 		r.msgs = append(r.msgs, msg)
 	}
 }
@@ -552,7 +570,14 @@ func (r *Raft) handleRequestVote(m pb.Message) {
 	msg.Term = r.Term
 	msg.From = r.id
 	msg.To = m.From
-	if m.Term < r.Term || (r.Vote != 0 && r.Vote != m.From) {
+	if m.Term < r.Term {
+		msg.Reject = true
+		r.msgs = append(r.msgs, msg)
+		return
+	}
+	lastLog := r.RaftLog.entries[r.RaftLog.LastIndex()]
+	upToDate := m.LogTerm > lastLog.Term || (lastLog.Term == m.LogTerm && m.Index >= lastLog.Index)
+	if (r.Vote != 0 && r.Vote != m.From) || !upToDate {
 		msg.Reject = true
 		r.msgs = append(r.msgs, msg)
 		return
