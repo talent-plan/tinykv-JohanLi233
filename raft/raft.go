@@ -483,7 +483,7 @@ func (r *Raft) handleAppendEntries(m pb.Message) {
 	r.electionElapsed = 0
 	r.Vote = 0
 	r.Lead = m.From
-	if r.State == StateCandidate || m.Term > r.Term {
+	if (r.State == StateCandidate && r.Term == m.Term) || m.Term > r.Term {
 		r.becomeFollower(m.Term, m.From)
 		msg.Term = m.Term
 	}
@@ -508,8 +508,9 @@ func (r *Raft) handleAppendEntries(m pb.Message) {
 		}
 	}
 
+	lastNewIdx := m.Index + uint64(len(m.Entries))
 	if m.Commit > r.RaftLog.committed {
-		r.RaftLog.committed = min(m.Commit, r.RaftLog.LastIndex())
+		r.RaftLog.committed = min(m.Commit, lastNewIdx)
 	}
 	msg.Index = r.RaftLog.LastIndex()
 	r.msgs = append(r.msgs, msg)
