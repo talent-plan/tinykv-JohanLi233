@@ -83,6 +83,7 @@ func newLog(storage Storage) *RaftLog {
 		l.stabled = hi
 		l.firstIndex = lo
 	}
+
 	return &l
 }
 

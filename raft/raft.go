@@ -187,9 +187,13 @@ func newRaft(c *Config) *Raft {
 	rf.realElectionTimeout = randTime(rf.electionTimeout)
 	rf.rejectCount = 0
 	rf.RaftLog = newLog(c.Storage)
+	if c.Applied > 0 {
+		rf.RaftLog.applied = c.Applied
+	}
 	rf.State = StateFollower
 	rf.Vote = hardState.Vote
 	rf.Term = hardState.Term
+	rf.RaftLog.committed = hardState.Commit
 	return &rf
 }
 
@@ -401,6 +405,9 @@ func (r *Raft) becomeLeader() {
 		}
 		r.Prs[peer].Next = dummy.Index + 1
 		r.Prs[peer].Match = dummy.Index
+	}
+	if len(r.Prs) == 1 {
+		r.RaftLog.committed = r.Prs[r.id].Match
 	}
 }
 
