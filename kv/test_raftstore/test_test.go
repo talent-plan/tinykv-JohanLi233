@@ -83,7 +83,15 @@ func checkConcurrentAppends(t *testing.T, v string, counts []int) {
 }
 
 // make network chaos among servers
-func networkchaos(t *testing.T, cluster *Cluster, ch chan bool, done *int32, unreliable bool, partitions bool, electionTimeout time.Duration) {
+func networkchaos(
+	t *testing.T,
+	cluster *Cluster,
+	ch chan bool,
+	done *int32,
+	unreliable bool,
+	partitions bool,
+	electionTimeout time.Duration,
+) {
 	defer func() { ch <- true }()
 	for atomic.LoadInt32(done) == 0 {
 		if partitions {
@@ -142,7 +150,17 @@ func confchanger(t *testing.T, cluster *Cluster, ch chan bool, done *int32) {
 // - If maxraftlog is a positive number, the count of the persistent log for Raft shouldn't exceed 2*maxraftlog.
 // - If confchange is set, the cluster will schedule random conf change concurrently.
 // - If split is set, split region when size exceed 1024 bytes.
-func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash bool, partitions bool, maxraftlog int, confchange bool, split bool) {
+func GenericTest(
+	t *testing.T,
+	part string,
+	nclients int,
+	unreliable bool,
+	crash bool,
+	partitions bool,
+	maxraftlog int,
+	confchange bool,
+	split bool,
+) {
 	title := "Test: "
 	if unreliable {
 		// the network drops RPC requests and replies.
@@ -227,7 +245,15 @@ func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash
 		if unreliable || partitions {
 			// Allow the clients to perform some operations without interruption
 			time.Sleep(300 * time.Millisecond)
-			go networkchaos(t, cluster, ch_partitioner, &done_partitioner, unreliable, partitions, electionTimeout)
+			go networkchaos(
+				t,
+				cluster,
+				ch_partitioner,
+				&done_partitioner,
+				unreliable,
+				partitions,
+				electionTimeout,
+			)
 		}
 		if confchange {
 			// Allow the clients to perfrom some operations without interruption
@@ -309,7 +335,12 @@ func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash
 					truncatedIdx := state.TruncatedState.Index
 					appliedIdx := state.AppliedIndex
 					if appliedIdx-truncatedIdx > 2*uint64(maxraftlog) {
-						t.Fatalf("logs were not trimmed (%v - %v > 2*%v)", appliedIdx, truncatedIdx, maxraftlog)
+						t.Fatalf(
+							"logs were not trimmed (%v - %v > 2*%v)",
+							appliedIdx,
+							truncatedIdx,
+							maxraftlog,
+						)
 					}
 				}
 
@@ -491,7 +522,12 @@ func TestOneSnapshot2C(t *testing.T) {
 		truncatedIdx := state.TruncatedState.Index
 		appliedIdx := state.AppliedIndex
 		if appliedIdx-truncatedIdx > 2*uint64(cfg.RaftLogGcCountLimit) {
-			t.Fatalf("logs were not trimmed (%v - %v > 2*%v)", appliedIdx, truncatedIdx, cfg.RaftLogGcCountLimit)
+			t.Fatalf(
+				"logs were not trimmed (%v - %v > 2*%v)",
+				appliedIdx,
+				truncatedIdx,
+				cfg.RaftLogGcCountLimit,
+			)
 		}
 	}
 }
@@ -702,7 +738,11 @@ func TestOneSplit3B(t *testing.T) {
 	assert.True(t, bytes.Equal(left.GetEndKey(), right.GetStartKey()))
 	assert.True(t, bytes.Equal(right.GetEndKey(), region.GetEndKey()))
 
-	req := NewRequest(left.GetId(), left.GetRegionEpoch(), []*raft_cmdpb.Request{NewGetCfCmd(engine_util.CfDefault, []byte("k2"))})
+	req := NewRequest(
+		left.GetId(),
+		left.GetRegionEpoch(),
+		[]*raft_cmdpb.Request{NewGetCfCmd(engine_util.CfDefault, []byte("k2"))},
+	)
 	resp, _ := cluster.CallCommandOnLeader(&req, time.Second)
 	assert.NotNil(t, resp.GetHeader().GetError())
 	assert.NotNil(t, resp.GetHeader().GetError().GetKeyNotInRegion())

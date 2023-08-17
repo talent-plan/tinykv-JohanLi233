@@ -51,7 +51,12 @@ type PeerStorage struct {
 }
 
 // NewPeerStorage get the persist raftState from engines and return a peer storage
-func NewPeerStorage(engines *engine_util.Engines, region *metapb.Region, regionSched chan<- worker.Task, tag string) (*PeerStorage, error) {
+func NewPeerStorage(
+	engines *engine_util.Engines,
+	region *metapb.Region,
+	regionSched chan<- worker.Task,
+	tag string,
+) (*PeerStorage, error) {
 	log.Debugf("%s creating storage for %s", tag, region.String())
 	raftState, err := meta.InitRaftLocalState(engines.Raft, region)
 	if err != nil {
@@ -233,7 +238,12 @@ func (ps *PeerStorage) AppliedIndex() uint64 {
 func (ps *PeerStorage) validateSnap(snap *eraftpb.Snapshot) bool {
 	idx := snap.GetMetadata().GetIndex()
 	if idx < ps.truncatedIndex() {
-		log.Infof("%s snapshot is stale, generate again, snapIndex: %d, truncatedIndex: %d", ps.Tag, idx, ps.truncatedIndex())
+		log.Infof(
+			"%s snapshot is stale, generate again, snapIndex: %d, truncatedIndex: %d",
+			ps.Tag,
+			idx,
+			ps.truncatedIndex(),
+		)
 		return false
 	}
 	var snapData rspb.RaftSnapshotData
@@ -244,7 +254,12 @@ func (ps *PeerStorage) validateSnap(snap *eraftpb.Snapshot) bool {
 	snapEpoch := snapData.GetRegion().GetRegionEpoch()
 	latestEpoch := ps.region.GetRegionEpoch()
 	if snapEpoch.GetConfVer() < latestEpoch.GetConfVer() {
-		log.Infof("%s snapshot epoch is stale, snapEpoch: %s, latestEpoch: %s", ps.Tag, snapEpoch, latestEpoch)
+		log.Infof(
+			"%s snapshot epoch is stale, snapEpoch: %s, latestEpoch: %s",
+			ps.Tag,
+			snapEpoch,
+			latestEpoch,
+		)
 		return false
 	}
 	return true
@@ -267,7 +282,12 @@ func (ps *PeerStorage) clearExtraData(newRegion *metapb.Region) {
 }
 
 // ClearMeta delete stale metadata like raftState, applyState, regionState and raft log entries
-func ClearMeta(engines *engine_util.Engines, kvWB, raftWB *engine_util.WriteBatch, regionID uint64, lastIndex uint64) error {
+func ClearMeta(
+	engines *engine_util.Engines,
+	kvWB, raftWB *engine_util.WriteBatch,
+	regionID uint64,
+	lastIndex uint64,
+) error {
 	start := time.Now()
 	kvWB.DeleteMeta(meta.RegionStateKey(regionID))
 	kvWB.DeleteMeta(meta.ApplyStateKey(regionID))
@@ -308,11 +328,16 @@ func ClearMeta(engines *engine_util.Engines, kvWB, raftWB *engine_util.WriteBatc
 // never be committed
 func (ps *PeerStorage) Append(entries []eraftpb.Entry, raftWB *engine_util.WriteBatch) error {
 	// Your Code Here (2B).
+	log.Infof("1111111111111")
 	return nil
 }
 
 // Apply the peer with given snapshot
-func (ps *PeerStorage) ApplySnapshot(snapshot *eraftpb.Snapshot, kvWB *engine_util.WriteBatch, raftWB *engine_util.WriteBatch) (*ApplySnapResult, error) {
+func (ps *PeerStorage) ApplySnapshot(
+	snapshot *eraftpb.Snapshot,
+	kvWB *engine_util.WriteBatch,
+	raftWB *engine_util.WriteBatch,
+) (*ApplySnapResult, error) {
 	log.Infof("%v begin to apply snapshot", ps.Tag)
 	snapData := new(rspb.RaftSnapshotData)
 	if err := snapData.Unmarshal(snapshot.Data); err != nil {
