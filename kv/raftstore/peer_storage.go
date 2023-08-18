@@ -328,7 +328,20 @@ func ClearMeta(
 // never be committed
 func (ps *PeerStorage) Append(entries []eraftpb.Entry, raftWB *engine_util.WriteBatch) error {
 	// Your Code Here (2B).
-	log.Infof("1111111111111")
+	for _, entry := range entries {
+		err := raftWB.SetMeta(meta.RaftLogKey(ps.region.GetId(), entry.GetIndex()), &entry)
+		if err != nil {
+			log.Panic(err)
+		}
+	}
+	curLastIndex := entries[len(entries)-1].GetIndex()
+	curLastTerm := entries[len(entries)-1].GetIndex()
+	prevLastIndex := ps.raftState.GetLastIndex()
+	for Index := curLastIndex + 1; Index <= prevLastIndex; Index++ {
+		raftWB.DeleteMeta(meta.RaftLogKey(ps.Region().GetId(), Index))
+	}
+	ps.raftState.LastIndex = curLastIndex
+	ps.raftState.LastTerm = curLastTerm
 	return nil
 }
 
@@ -356,6 +369,36 @@ func (ps *PeerStorage) ApplySnapshot(
 func (ps *PeerStorage) SaveReadyState(ready *raft.Ready) (*ApplySnapResult, error) {
 	// Hint: you may call `Append()` and `ApplySnapshot()` in this function
 	// Your Code Here (2B/2C).
+	hardState, unstabledEntries, committedEntries := ready.HardState, ready.Entries, ready.CommittedEntries
+	kvWB := new(engine_util.WriteBatch)
+	raftWB := new(engine_util.WriteBatch)
+	if n := len(committedEntries); n > 0 {
+		ps.applyState.AppliedIndex = committedEntries[len(committedEntries)-1].GetIndex()
+		err := kvWB.SetMeta(meta.ApplyStateKey(ps.region.GetId()), ps.applyState)
+		if err != nil {
+			log.Panic(err)
+		}
+	}
+
+	hasUpdate := false
+	if !raft.IsEmptyHardState(hardState) {
+		hasUpdate = true
+		*ps.raftState.HardState = hardState
+	}
+	if n := len(unstabledEntries); n > 0 { // save raft log
+		hasUpdate = true
+		if err := ps.Append(unstabledEntries, raftWB); err != nil {
+			log.Panic(err)
+		}
+	}
+	if hasUpdate { // save RaftLocalState: Used to store HardState of the current Raft and the last Log Index.
+		if err := raftWB.SetMeta(meta.RaftStateKey(ps.Region().GetId()), ps.raftState); err != nil {
+			log.Panic(err)
+		}
+	}
+
+	kvWB.WriteToDB(ps.Engines.Kv)
+	raftWB.WriteToDB(ps.Engines.Raft)
 	return nil, nil
 }
 

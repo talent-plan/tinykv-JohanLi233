@@ -168,7 +168,7 @@ func newRaft(c *Config) *Raft {
 		panic(err.Error())
 	}
 	// Your Code Here (2A).
-	hardState, _, _ := c.Storage.InitialState()
+	hardState, confState, _ := c.Storage.InitialState()
 	rf := Raft{}
 	rf.id = c.ID
 	rf.electionTimeout = c.ElectionTick
@@ -194,6 +194,14 @@ func newRaft(c *Config) *Raft {
 	rf.Vote = hardState.Vote
 	rf.Term = hardState.Term
 	rf.RaftLog.committed = hardState.Commit
+
+	for _, peer := range confState.Nodes {
+		rf.Prs[peer] = &Progress{
+			Match: rf.RaftLog.firstIndex,
+			Next:  rf.RaftLog.LastIndex() + 1,
+		}
+		rf.votes[peer] = false
+	}
 	return &rf
 }
 
@@ -204,6 +212,9 @@ func (r *Raft) checkLeaderCommit() {
 	}
 
 	for ; N > r.RaftLog.committed; N-- {
+		if N >= r.RaftLog.length() {
+			break
+		}
 		if r.RaftLog.entries[N].GetTerm() != r.Term {
 			continue
 		}
@@ -506,6 +517,9 @@ func (r *Raft) handleAppendEntries(m pb.Message) {
 		}
 		if entry.Index > r.RaftLog.LastIndex() {
 			for i := idx; i < idx+len(m.Entries); i++ {
+				if i > len(m.Entries) {
+					break
+				}
 				r.RaftLog.entries = append(r.RaftLog.entries, *m.Entries[i])
 			}
 			break
