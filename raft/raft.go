@@ -197,7 +197,7 @@ func newRaft(c *Config) *Raft {
 
 	for _, peer := range confState.Nodes {
 		rf.Prs[peer] = &Progress{
-			Match: rf.RaftLog.firstIndex,
+			Match: rf.RaftLog.TruncatedIndex(),
 			Next:  rf.RaftLog.LastIndex() + 1,
 		}
 		rf.votes[peer] = false
@@ -206,16 +206,13 @@ func newRaft(c *Config) *Raft {
 }
 
 func (r *Raft) checkLeaderCommit() {
-	var N uint64 = r.RaftLog.firstIndex
+	var N uint64 = r.RaftLog.TruncatedIndex()
 	for peer := range r.Prs {
 		N = max(N, r.Prs[peer].Match)
 	}
 
 	for ; N > r.RaftLog.committed; N-- {
-		if N >= r.RaftLog.length() {
-			break
-		}
-		if r.RaftLog.entries[N].GetTerm() != r.Term {
+		if r.RaftLog.entries[r.RaftLog.Index2idx(N)].GetTerm() != r.Term {
 			continue
 		}
 
@@ -268,23 +265,27 @@ func (r *Raft) handlePropose(m pb.Message) {
 func (r *Raft) sendAppend(to uint64) bool {
 	// Your Code Here (2A).
 	nextIndex := r.Prs[to].Next
-	entries := r.RaftLog.entries[nextIndex:]
-	sendEntries := []*pb.Entry{}
-	for _, entry := range entries {
-		sendEntries = append(sendEntries, &r.RaftLog.entries[entry.Index])
+	prevIndex := nextIndex - 1
+
+	if nextIndex <= r.RaftLog.TruncatedIndex() {
+		r.sendSnapshot(to)
+		return true
 	}
-	lastLogTerm, _ := r.RaftLog.Term(nextIndex - 1)
-	msg := pb.Message{
+
+	request := pb.Message{
 		MsgType: pb.MessageType_MsgAppend,
-		From:    r.id,
 		To:      to,
+		From:    r.id,
 		Term:    r.Term,
-		LogTerm: lastLogTerm,
-		Entries: sendEntries,
-		Index:   nextIndex - 1,
 		Commit:  r.RaftLog.committed,
 	}
-	r.msgs = append(r.msgs, msg)
+
+	for idx := r.RaftLog.Index2idx(nextIndex); idx < r.RaftLog.length(); idx++ {
+		request.Entries = append(request.Entries, &r.RaftLog.entries[idx])
+	}
+	request.LogTerm, _ = r.RaftLog.Term(prevIndex)
+	request.Index = prevIndex
+	r.msgs = append(r.msgs, request)
 	return true
 }
 
@@ -399,6 +400,7 @@ func (r *Raft) becomeCandidate() {
 func (r *Raft) becomeLeader() {
 	// Your Code Here (2A).
 	// NOTE: Leader should propose a noop entry on its term
+
 	r.State = StateLeader
 	r.Lead = r.id
 	r.Vote = 0
@@ -417,7 +419,8 @@ func (r *Raft) becomeLeader() {
 		r.Prs[peer].Next = dummy.Index + 1
 		r.Prs[peer].Match = dummy.Index
 	}
-	if len(r.Prs) == 1 {
+
+	if len(r.Prs) <= 1 {
 		r.RaftLog.committed = r.Prs[r.id].Match
 	}
 }
@@ -480,58 +483,72 @@ func (r *Raft) handleAppendEntriesResponse(m pb.Message) {
 		r.sendAppend(m.From)
 	}
 }
+func getLastLogIndex(m *pb.Message) uint64 {
+	n := len(m.GetEntries())
+	if n > 0 {
+		return m.Entries[n-1].GetIndex()
+	}
+	return m.GetIndex()
+}
 
 // handleAppendEntries handle AppendEntries RPC request
 func (r *Raft) handleAppendEntries(m pb.Message) {
-	// Your Code Here (2A).
-	msg := pb.Message{}
-	msg.Term = r.Term
-	msg.From = r.id
-	msg.To = m.From
-	msg.MsgType = pb.MessageType_MsgAppendResponse
-	msg.Index = r.RaftLog.LastIndex()
-	if m.Term != None && m.Term < r.Term {
-		msg.Reject = true
-		r.msgs = append(r.msgs, msg)
-		return
+	response := pb.Message{
+		MsgType: pb.MessageType_MsgAppendResponse,
+		To:      m.From,
+		From:    r.id,
+		Term:    r.Term,
+		Reject:  false,
 	}
-	r.electionElapsed = 0
-	r.Vote = 0
-	r.Lead = m.From
-	if (r.State == StateCandidate && r.Term == m.Term) || m.Term > r.Term {
-		r.becomeFollower(m.Term, m.From)
-		msg.Term = m.Term
-	}
-	logTerm, _ := r.RaftLog.Term(m.Index)
-	if r.RaftLog.LastIndex() < m.Index || logTerm != m.LogTerm {
-		msg.Reject = true
-		r.msgs = append(r.msgs, msg)
+
+	if m.GetTerm() < r.Term { // Err Old Term
+		response.Reject = true
+		r.msgs = append(r.msgs, response)
 		return
 	}
 
-	for idx, entry := range m.Entries {
-		logTerm, _ := r.RaftLog.Term(entry.Index)
-		if logTerm != entry.Term && entry.Index <= r.RaftLog.LastIndex() {
-			r.RaftLog.entries = r.RaftLog.entries[:entry.Index]
-			r.RaftLog.stabled = min(r.RaftLog.stabled, entry.Index-1)
-		}
-		if entry.Index > r.RaftLog.LastIndex() {
-			for i := idx; i < idx+len(m.Entries); i++ {
-				if i > len(m.Entries) {
-					break
-				}
-				r.RaftLog.entries = append(r.RaftLog.entries, *m.Entries[i])
+	if m.GetTerm() > r.Term || (m.GetTerm() == r.Term && r.State == StateCandidate) {
+		r.becomeFollower(m.GetTerm(), m.GetFrom())
+		response.Term = r.Term
+	}
+
+	prevLogIndex, prevLogTerm := m.GetIndex(), m.GetLogTerm()
+	term, _ := r.RaftLog.Term(prevLogIndex)
+	if prevLogIndex > r.RaftLog.LastIndex() ||
+		(term != prevLogTerm && prevLogIndex != 0) { // Err Log Doesn't Match
+		response.Reject = true
+		r.msgs = append(r.msgs, response)
+		return
+	}
+	lastNewLogIndex := getLastLogIndex(&m)
+	if len(m.Entries) > 0 {
+		baseNewLogIndex := m.Entries[0].GetIndex()
+		// If an existing entry conflicts with a new one (same index
+		// but different terms), delete the existing entry and all that
+		// follow it
+		newLogIndex := baseNewLogIndex
+		for ; newLogIndex <= min(r.RaftLog.LastIndex(), lastNewLogIndex); newLogIndex++ {
+			newLogTerm, _ := r.RaftLog.Term(newLogIndex)
+			if newLogTerm != m.Entries[newLogIndex-baseNewLogIndex].GetTerm() {
+				r.RaftLog.entries = r.RaftLog.entries[:r.RaftLog.Index2idx(newLogIndex)]
+				r.RaftLog.stabled = min(r.RaftLog.stabled, newLogIndex-1)
+				break
 			}
-			break
+		}
+		for ; newLogIndex <= lastNewLogIndex; newLogIndex++ {
+			r.RaftLog.entries = append(r.RaftLog.entries, *m.Entries[newLogIndex-baseNewLogIndex])
 		}
 	}
 
-	lastNewIdx := m.Index + uint64(len(m.Entries))
-	if m.Commit > r.RaftLog.committed {
-		r.RaftLog.committed = min(m.Commit, lastNewIdx)
+	if m.GetCommit() > r.RaftLog.committed {
+		r.RaftLog.committed = min(m.GetCommit(), lastNewLogIndex)
 	}
-	msg.Index = r.RaftLog.LastIndex()
-	r.msgs = append(r.msgs, msg)
+	response.Index = lastNewLogIndex
+
+	r.Lead = m.GetFrom()
+	r.Vote = 0
+	r.electionElapsed = 0
+	r.msgs = append(r.msgs, response)
 }
 
 // handleHeartbeat handle Heartbeat RPC request
@@ -599,8 +616,8 @@ func (r *Raft) handleRequestVote(m pb.Message) {
 		r.becomeFollower(m.Term, None)
 		msg.Term = r.Term
 	}
-	lastLog := r.RaftLog.entries[r.RaftLog.LastIndex()]
-	upToDate := m.LogTerm > lastLog.Term || (lastLog.Term == m.LogTerm && m.Index >= lastLog.Index)
+	upToDate := m.LogTerm > r.RaftLog.LastTerm() ||
+		(r.RaftLog.LastTerm() == m.LogTerm && m.Index >= r.RaftLog.LastIndex())
 	if (r.Vote != 0 && r.Vote != m.From) || !upToDate {
 		msg.Reject = true
 		r.msgs = append(r.msgs, msg)
@@ -637,11 +654,6 @@ func (r *Raft) handleRequestVoteResponse(m pb.Message) {
 			return
 		}
 	}
-}
-
-// handleSnapshot handle Snapshot RPC request
-func (r *Raft) handleSnapshot(m pb.Message) {
-	// Your Code Here (2C).
 }
 
 // addNode add a new node to raft group

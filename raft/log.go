@@ -15,7 +15,7 @@
 package raft
 
 import (
-	"errors"
+	"fmt"
 
 	pb "github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
 )
@@ -52,92 +52,118 @@ type RaftLog struct {
 	// the incoming unstable snapshot, if any.
 	// (Used in 2C)
 	pendingSnapshot *pb.Snapshot
-
-	// Your Data Here (2A).
-	firstIndex uint64
 }
 
 // newLog returns log using the given storage. It recovers the log
 // to the state that it just commits and applies the latest snapshot.
 func newLog(storage Storage) *RaftLog {
-	// Your Code Here (2A).
-	l := RaftLog{}
-	lo, _ := storage.FirstIndex()
-	hi, _ := storage.LastIndex()
-	entries, _ := storage.Entries(lo, hi+1)
-	l.storage = storage
-	dummy := pb.Entry{}
-	dummy.Data = nil
-	dummy.Term = 0
-	dummy.Index = 0
-	l.committed = 0
-	l.entries = append(l.entries, dummy)
-	l.pendingSnapshot = nil
-	if hi == 0 {
-		l.applied = 0
-		l.stabled = 0
-		l.firstIndex = 1
-	} else {
-		l.entries = append(l.entries, entries...)
-		l.applied = lo - 1
-		l.stabled = hi
-		l.firstIndex = lo
+	hardState, _, _ := storage.InitialState()
+	firstIndex, _ := storage.FirstIndex() // truncatedIndex + 1
+	truncatedIndex := firstIndex - 1
+	truncatedTerm, _ := storage.Term(truncatedIndex)
+	lastIndex, _ := storage.LastIndex()
+	entries, _ := storage.Entries(firstIndex, lastIndex+1)
+	newLog := &RaftLog{
+		storage:   storage,
+		committed: hardState.Commit,
+		applied:   truncatedIndex,
+		stabled:   lastIndex,
+		entries: append(
+			[]pb.Entry{{Index: truncatedIndex, Term: truncatedTerm}},
+			entries...),
+		pendingSnapshot: nil,
 	}
+	return newLog
+}
 
-	return &l
+func (l *RaftLog) length() uint64 {
+	return uint64(len(l.entries))
+}
+
+func (l *RaftLog) Index2idx(Index uint64) uint64 {
+	if Index < l.TruncatedIndex() {
+		panic(fmt.Sprintf("Index %d UnderFlow", Index))
+	}
+	return Index - l.TruncatedIndex()
+}
+
+func (l *RaftLog) LastAppend() *pb.Entry {
+	if l.length() == 0 {
+		return nil
+	}
+	return &l.entries[l.length()-1]
 }
 
 // We need to compact the log entries in some point of time like
 // storage compact stabled log entries prevent the log entries
 // grow unlimitedly in memory
 func (l *RaftLog) maybeCompact() {
-	// Your Code Here (2C).
+	firstIndex, _ := l.storage.FirstIndex() // change at every CompactLogRequest
+	truncatedIndex := firstIndex - 1
+	truncatedTerm, _ := l.storage.Term(truncatedIndex)
+
+	if l.TruncatedIndex() < truncatedIndex {
+		if truncatedIndex <= l.LastAppend().GetIndex() {
+			l.entries = l.entries[l.Index2idx(truncatedIndex):]
+		} else {
+			l.entries = []pb.Entry{{Term: truncatedTerm, Index: truncatedIndex}}
+		}
+	}
 }
 
 // allEntries return all the entries not compacted.
 // note, exclude any dummy entries from the return value.
 // note, this is one of the test stub functions you need to implement.
 func (l *RaftLog) allEntries() []pb.Entry {
-	// Your Code Here (2A).
-	return l.entries[l.firstIndex:]
-}
-func (l *RaftLog) length() uint64 {
-	return uint64(len(l.entries))
+	if len(l.entries) == 1 { // only Truncated Entry
+		return []pb.Entry{}
+	}
+	return l.entries[1:]
 }
 
 // unstableEntries return all the unstable entries
 func (l *RaftLog) unstableEntries() []pb.Entry {
-	// Your Code Here (2A).
-	if l.stabled+1 > l.length() {
-		return nil
+	unstabledBegin := l.Index2idx(l.stabled) + 1
+	if unstabledBegin >= l.length() {
+		return []pb.Entry{}
 	}
-	return l.entries[l.stabled+1:]
+	return l.entries[unstabledBegin:]
 }
 
 // nextEnts returns all the committed but not applied entries
-func (l *RaftLog) nextEnts() (ents []pb.Entry) {
-	// Your Code Here (2A).
-	if l.applied+1 > l.length() {
-		return nil
+func (l *RaftLog) nextEnts() []pb.Entry {
+	appliedBegin := l.Index2idx(l.applied) + 1
+	committedBegin := l.Index2idx(l.committed) + 1
+
+	if appliedBegin >= l.length() { // all entries are applied, return empty
+		return []pb.Entry{}
 	}
-	return l.entries[l.applied+1 : l.committed+1]
+
+	return l.entries[appliedBegin:committedBegin]
+}
+
+func (l *RaftLog) TruncatedIndex() uint64 {
+	return l.entries[0].GetIndex()
+}
+
+func (l *RaftLog) TruncatedTerm() uint64 {
+	return l.entries[0].GetTerm()
+}
+
+// LastTerm return the last term of the log entries
+func (l *RaftLog) LastTerm() uint64 {
+	return l.LastAppend().GetTerm()
 }
 
 // LastIndex return the last index of the log entries
 func (l *RaftLog) LastIndex() uint64 {
-	// Your Code Here (2A).
-	return l.entries[len(l.entries)-1].Index
-}
-
-func (l *RaftLog) LastTerm() uint64 {
-	return l.entries[len(l.entries)-1].Term
+	return l.LastAppend().GetIndex()
 }
 
 // Term return the term of the entry in the given index
-func (l *RaftLog) Term(i uint64) (uint64, error) {
-	// Your Code Here (2A).
-	if i > l.LastIndex() || i < l.firstIndex {
-		return 0, errors.New("out of bound")
+func (l *RaftLog) Term(i uint64) (result uint64, err error) {
+	if i > l.LastIndex() || i < l.TruncatedIndex() {
+		return 0, pb.ErrIntOverflowEraftpb
 	}
-	return l.entries[i].Term, nil
+	return l.entries[l.Index2idx(i)].GetTerm(), nil
 }

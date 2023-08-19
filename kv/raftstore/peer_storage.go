@@ -397,8 +397,8 @@ func (ps *PeerStorage) SaveReadyState(ready *raft.Ready) (*ApplySnapResult, erro
 		}
 	}
 
-	kvWB.WriteToDB(ps.Engines.Kv)
-	raftWB.WriteToDB(ps.Engines.Raft)
+	kvWB.MustWriteToDB(ps.Engines.Kv)
+	raftWB.MustWriteToDB(ps.Engines.Raft)
 	return nil, nil
 }
 

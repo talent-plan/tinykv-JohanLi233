@@ -46,18 +46,30 @@ func (d *peerMsgHandler) HandleRaftReady() {
 		return
 	}
 	// Your Code Here (2B).
-	if d.RaftGroup.HasReady() {
-		ready := d.RaftGroup.Ready()
-		d.peerStorage.SaveReadyState(&ready)
+	if d.peer.RaftGroup.HasReady() {
+		// 0. get ready
+		ready := d.peer.RaftGroup.Ready()
+
+		// 1. send messages
 		d.peer.Send(d.ctx.trans, ready.Messages)
+
+		// 2. apply entries
 		if n := len(ready.CommittedEntries); n > 0 {
 			for _, entry := range ready.CommittedEntries {
+				// 这里不是最后统一写入 badger 是防止出现先 put 再 get，由于最后统一写而 get 不到的情况
 				kvWB := new(engine_util.WriteBatch)
 				d.applyCommittedEntry(&entry, kvWB)
-				kvWB.WriteToDB(d.ctx.engine.Kv)
+				kvWB.MustWriteToDB(d.ctx.engine.Kv)
 			}
 		}
-		d.RaftGroup.Advance(ready)
+
+		// 3. persist update
+		if _, err := d.peer.peerStorage.SaveReadyState(&ready); err != nil {
+			log.Panic(err)
+		}
+
+		// 4. tell raft module to advance
+		d.peer.RaftGroup.Advance(ready)
 	}
 }
 
@@ -85,17 +97,17 @@ func (d *peerMsgHandler) applyAdminRequest(
 	case raft_cmdpb.AdminCmdType_InvalidAdmin:
 	case raft_cmdpb.AdminCmdType_ChangePeer:
 	case raft_cmdpb.AdminCmdType_CompactLog:
-		// compactLogIndex := adminReq.CompactLog.GetCompactIndex()
-		// compactLogTerm := adminReq.CompactLog.GetCompactTerm()
-		//
-		// // 1. do the actual log deletion work
-		// d.ScheduleCompactLog(compactLogIndex)
-		//
-		// // 2. update applystate
-		// if d.peer.peerStorage.applyState.TruncatedState.GetIndex() < compactLogIndex {
-		// 	d.peer.peerStorage.applyState.TruncatedState.Index = compactLogIndex
-		// 	d.peer.peerStorage.applyState.TruncatedState.Term = compactLogTerm
-		// }
+		compactLogIndex := adminReq.CompactLog.GetCompactIndex()
+		compactLogTerm := adminReq.CompactLog.GetCompactTerm()
+
+		// 1. do the actual log deletion work
+		d.ScheduleCompactLog(compactLogIndex)
+
+		// 2. update applystate
+		if d.peer.peerStorage.applyState.TruncatedState.GetIndex() < compactLogIndex {
+			d.peer.peerStorage.applyState.TruncatedState.Index = compactLogIndex
+			d.peer.peerStorage.applyState.TruncatedState.Term = compactLogTerm
+		}
 	case raft_cmdpb.AdminCmdType_TransferLeader:
 	case raft_cmdpb.AdminCmdType_Split:
 	}

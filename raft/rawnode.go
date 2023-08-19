@@ -236,12 +236,12 @@ func (rn *RawNode) Advance(rd Ready) {
 
 	if n := len(rd.CommittedEntries); n > 0 {
 		rn.Raft.RaftLog.applied = rd.CommittedEntries[n-1].GetIndex()
+		rn.Raft.RaftLog.maybeCompact()
 	}
 
 	if len(rd.Messages) > 0 {
 		rn.Raft.msgs = rn.Raft.msgs[:0]
 	}
-	rn.Raft.RaftLog.maybeCompact()
 }
 
 // GetProgress return the Progress of this node and its peers, if this
