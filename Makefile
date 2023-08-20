@@ -10,7 +10,8 @@ endif
 GO                  := GO111MODULE=on go
 GOBUILD             := $(GO) build $(BUILD_FLAG) -tags codes
 GOTEST              := $(GO) test -v --count=1 --parallel=1 -p=1
-TEST_CLEAN          := rm -rf /tmp/*test-raftstore*
+# TEST_CLEAN          := rm -rf /tmp/*test-raftstore*
+TEST_CLEAN          := rm -rf /var/folders/hd/rczk_z8x4bs8ljntm4119lyr0000gn/T/*test-raftstore*
 
 TEST_LDFLAGS        := ""
 
