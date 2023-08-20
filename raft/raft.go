@@ -447,6 +447,7 @@ func (r *Raft) Step(m pb.Message) error {
 		r.handleRequestVoteResponse(m)
 
 	case 7: //MsgSnapshot
+		r.handleSnapshot(m)
 
 	case 8: //MsgHeartbeat
 		r.handleHeartbeat(m)
