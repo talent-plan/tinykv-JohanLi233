@@ -16,6 +16,7 @@ package raft
 
 import (
 	"errors"
+	"github.com/pingcap-incubator/tinykv/proto/pkg/raft_cmdpb"
 
 	pb "github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
 )
@@ -240,24 +241,47 @@ func (r *Raft) handlePropose(m pb.Message) {
 	if r.State != StateLeader {
 		return
 	}
-	for _, entry := range m.Entries {
-		entry.Term = r.Term
-		entry.Index = r.RaftLog.LastIndex() + 1
-		r.RaftLog.entries = append(r.RaftLog.entries, *entry)
+	for _, entry := range m.GetEntries() {
+		newEntry := pb.Entry{
+			EntryType: entry.GetEntryType(),
+			Term:      r.Term,
+			Index:     r.RaftLog.LastIndex() + 1,
+			Data:      entry.GetData(),
+		}
+		msg := new(raft_cmdpb.RaftCmdRequest)
+		msg.Unmarshal(newEntry.Data)
+		r.RaftLog.appendEntry(newEntry)
 	}
-	index := r.RaftLog.LastIndex()
-	r.Prs[r.id].Next = index + 1
-	r.Prs[r.id].Match = index
+
+	if _, ok := r.Prs[r.id]; ok {
+		r.Prs[r.id].Match = r.RaftLog.LastIndex()
+		r.Prs[r.id].Next = r.RaftLog.LastIndex() + 1
+	}
+
 	if len(r.Prs) <= 1 {
 		r.checkLeaderCommit()
-		return
-	}
-	for peer := range r.Prs {
-		if peer == r.id {
-			continue
+	} else {
+
+		for peer := range r.Prs {
+			if peer == r.id {
+				continue
+			}
+			r.sendAppend(peer)
 		}
-		r.sendAppend(peer)
+		// r.startAppend()
 	}
+	// for _, entry := range m.Entries {
+	// 	entry.Term = r.Term
+	// 	entry.Index = r.RaftLog.LastIndex() + 1
+	// 	r.RaftLog.entries = append(r.RaftLog.entries, *entry)
+	// }
+	// index := r.RaftLog.LastIndex()
+	// r.Prs[r.id].Next = index + 1
+	// r.Prs[r.id].Match = index
+	// if len(r.Prs) <= 1 {
+	// 	r.checkLeaderCommit()
+	// 	return
+	// }
 }
 
 // sendAppend sends an append RPC with new entries (if any) and the
@@ -269,7 +293,7 @@ func (r *Raft) sendAppend(to uint64) bool {
 
 	if nextIndex <= r.RaftLog.TruncatedIndex() {
 		r.sendSnapshot(to)
-		return true
+		return false
 	}
 
 	request := pb.Message{
@@ -472,18 +496,17 @@ func (r *Raft) handleAppendEntriesResponse(m pb.Message) {
 		return
 	}
 	if !m.Reject {
-		match := m.Index
-		next := match + 1
-		r.Prs[m.From].Next = max(r.Prs[m.From].Next, next)
-		r.Prs[m.From].Match = max(r.Prs[m.From].Match, match)
+		// match := m.Index
+		// next := match + 1
+		r.Prs[m.From].Next = m.GetIndex() + 1
+		r.Prs[m.From].Match = m.GetIndex()
 		r.checkLeaderCommit()
 	} else if m.Reject {
-		if r.Prs[m.From].Next > 1 {
-			r.Prs[m.From].Next--
-		}
+		r.Prs[m.From].Next--
 		r.sendAppend(m.From)
 	}
 }
+
 func getLastLogIndex(m *pb.Message) uint64 {
 	n := len(m.GetEntries())
 	if n > 0 {

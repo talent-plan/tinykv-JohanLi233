@@ -58,14 +58,6 @@ func (d *peerMsgHandler) HandleRaftReady() {
 				// 这里不是最后统一写入 badger 是防止出现先 put 再 get，由于最后统一写而 get 不到的情况
 				kvWB := new(engine_util.WriteBatch)
 				d.applyCommittedEntry(&entry, kvWB)
-				// if d.stopped {
-				// 	return
-				// }
-				// // 每次 apply 完更新 appliedIndex
-				// d.peer.peerStorage.applyState.AppliedIndex = entry.GetIndex()
-				// if err := kvWB.SetMeta(meta.ApplyStateKey(d.regionId), d.peer.peerStorage.applyState); err != nil {
-				// 	log.Panic(err)
-				// }
 				kvWB.MustWriteToDB(d.ctx.engine.Kv)
 			}
 		}
