@@ -22,7 +22,7 @@ func (r *Raft) sendSnapshot(to uint64) {
 
 // handleSnapshot handle Snapshot RPC request
 func (r *Raft) handleSnapshot(m pb.Message) {
-	response := pb.Message{
+	response := &pb.Message{
 		MsgType: pb.MessageType_MsgAppendResponse,
 		To:      m.GetFrom(),
 		From:    r.id,
@@ -32,7 +32,7 @@ func (r *Raft) handleSnapshot(m pb.Message) {
 
 	if m.GetTerm() < r.Term {
 		response.Reject = true
-		r.msgs = append(r.msgs, response)
+		r.msgs = append(r.msgs, *response)
 		return
 	}
 
@@ -41,7 +41,7 @@ func (r *Raft) handleSnapshot(m pb.Message) {
 	if meta.GetIndex() < r.RaftLog.committed { // CompactLogRequest will be applied soon
 		response.Reject = true
 		response.Index = r.RaftLog.committed
-		r.msgs = append(r.msgs, response)
+		r.msgs = append(r.msgs, *response)
 		return
 	}
 
@@ -68,5 +68,5 @@ func (r *Raft) handleSnapshot(m pb.Message) {
 		}
 		r.votes[peer] = false
 	}
-	r.msgs = append(r.msgs, response)
+	r.msgs = append(r.msgs, *response)
 }

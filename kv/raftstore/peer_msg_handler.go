@@ -45,7 +45,6 @@ func (d *peerMsgHandler) HandleRaftReady() {
 	if d.stopped {
 		return
 	}
-	// Your Code Here (2B).
 	if d.peer.RaftGroup.HasReady() {
 		// 0. get ready
 		ready := d.peer.RaftGroup.Ready()
@@ -59,6 +58,14 @@ func (d *peerMsgHandler) HandleRaftReady() {
 				// 这里不是最后统一写入 badger 是防止出现先 put 再 get，由于最后统一写而 get 不到的情况
 				kvWB := new(engine_util.WriteBatch)
 				d.applyCommittedEntry(&entry, kvWB)
+				// if d.stopped {
+				// 	return
+				// }
+				// // 每次 apply 完更新 appliedIndex
+				// d.peer.peerStorage.applyState.AppliedIndex = entry.GetIndex()
+				// if err := kvWB.SetMeta(meta.ApplyStateKey(d.regionId), d.peer.peerStorage.applyState); err != nil {
+				// 	log.Panic(err)
+				// }
 				kvWB.MustWriteToDB(d.ctx.engine.Kv)
 			}
 		}
@@ -85,31 +92,6 @@ func (d *peerMsgHandler) applyCommittedEntry(entry *eraftpb.Entry, wb *engine_ut
 
 	if msg.AdminRequest != nil {
 		d.applyAdminRequest(msg.AdminRequest, entry, wb)
-	}
-}
-
-func (d *peerMsgHandler) applyAdminRequest(
-	adminReq *raft_cmdpb.AdminRequest,
-	entry *eraftpb.Entry,
-	wb *engine_util.WriteBatch,
-) {
-	switch adminReq.CmdType {
-	case raft_cmdpb.AdminCmdType_InvalidAdmin:
-	case raft_cmdpb.AdminCmdType_ChangePeer:
-	case raft_cmdpb.AdminCmdType_CompactLog:
-		compactLogIndex := adminReq.CompactLog.GetCompactIndex()
-		compactLogTerm := adminReq.CompactLog.GetCompactTerm()
-
-		// 1. do the actual log deletion work
-		d.ScheduleCompactLog(compactLogIndex)
-
-		// 2. update applystate
-		if d.peer.peerStorage.applyState.TruncatedState.GetIndex() < compactLogIndex {
-			d.peer.peerStorage.applyState.TruncatedState.Index = compactLogIndex
-			d.peer.peerStorage.applyState.TruncatedState.Term = compactLogTerm
-		}
-	case raft_cmdpb.AdminCmdType_TransferLeader:
-	case raft_cmdpb.AdminCmdType_Split:
 	}
 }
 
@@ -191,6 +173,31 @@ func (d *peerMsgHandler) applyRequests(
 	}
 }
 
+func (d *peerMsgHandler) applyAdminRequest(
+	adminReq *raft_cmdpb.AdminRequest,
+	entry *eraftpb.Entry,
+	wb *engine_util.WriteBatch,
+) {
+	switch adminReq.CmdType {
+	case raft_cmdpb.AdminCmdType_InvalidAdmin:
+	case raft_cmdpb.AdminCmdType_ChangePeer:
+	case raft_cmdpb.AdminCmdType_CompactLog:
+		compactLogIndex := adminReq.CompactLog.GetCompactIndex()
+		compactLogTerm := adminReq.CompactLog.GetCompactTerm()
+
+		// 1. do the actual log deletion work
+		d.ScheduleCompactLog(compactLogIndex)
+
+		// 2. update applystate
+		if d.peer.peerStorage.applyState.TruncatedState.GetIndex() < compactLogIndex {
+			d.peer.peerStorage.applyState.TruncatedState.Index = compactLogIndex
+			d.peer.peerStorage.applyState.TruncatedState.Term = compactLogTerm
+		}
+	case raft_cmdpb.AdminCmdType_TransferLeader:
+	case raft_cmdpb.AdminCmdType_Split:
+	}
+}
+
 func (d *peerMsgHandler) HandleMsg(msg message.Msg) {
 	switch msg.Type {
 	case message.MsgTypeRaftMessage:
@@ -205,7 +212,6 @@ func (d *peerMsgHandler) HandleMsg(msg message.Msg) {
 		d.onTick()
 	case message.MsgTypeSplitRegion:
 		split := msg.Data.(*message.MsgSplitRegion)
-		log.Infof("%s on split with %v", d.Tag, split.SplitKey)
 		d.onPrepareSplitRegion(split.RegionEpoch, split.SplitKey, split.Callback)
 	case message.MsgTypeRegionApproximateSize:
 		d.onApproximateRegionSize(msg.Data.(uint64))
@@ -217,6 +223,7 @@ func (d *peerMsgHandler) HandleMsg(msg message.Msg) {
 	}
 }
 
+// check correctness
 func (d *peerMsgHandler) preProposeRaftCommand(req *raft_cmdpb.RaftCmdRequest) error {
 	// Check store_id, make sure that the msg is dispatched to the right place.
 	if err := util.CheckStoreID(req, d.storeID()); err != nil {
@@ -224,8 +231,7 @@ func (d *peerMsgHandler) preProposeRaftCommand(req *raft_cmdpb.RaftCmdRequest) e
 	}
 
 	// Check whether the store has the right peer to handle the request.
-	regionID := d.regionId
-	leaderID := d.LeaderId()
+	regionID, leaderID := d.Region().GetId(), d.LeaderId()
 	if !d.IsLeader() {
 		leader := d.getPeerFromCache(leaderID)
 		return &util.ErrNotLeader{RegionId: regionID, Leader: leader}
@@ -254,12 +260,11 @@ func (d *peerMsgHandler) preProposeRaftCommand(req *raft_cmdpb.RaftCmdRequest) e
 }
 
 func (d *peerMsgHandler) proposeRaftCommand(msg *raft_cmdpb.RaftCmdRequest, cb *message.Callback) {
-	err := d.preProposeRaftCommand(msg)
-	if err != nil {
+	if err := d.preProposeRaftCommand(msg); err != nil {
 		cb.Done(ErrResp(err))
 		return
 	}
-	// Your Code Here (2B).
+
 	if len(msg.Requests) > 0 {
 		d.proposeRequests(msg, cb)
 	}
@@ -463,18 +468,9 @@ func (d *peerMsgHandler) checkMessage(msg *rspb.RaftMessage) bool {
 	}
 	target := msg.GetToPeer()
 	if target.Id < d.PeerId() {
-		log.Infof(
-			"%s target peer ID %d is less than %d, msg maybe stale",
-			d.Tag,
-			target.Id,
-			d.PeerId(),
-		)
 		return true
 	} else if target.Id > d.PeerId() {
 		if d.MaybeDestroy() {
-			log.Infof("%s is stale as received a larger peer %s, destroying", d.Tag, target)
-			d.destroyPeer()
-			d.ctx.router.sendStore(message.NewMsg(message.MsgTypeStoreRaftMessage, msg))
 		}
 		return true
 	}
@@ -486,11 +482,8 @@ func handleStaleMsg(trans Transport, msg *rspb.RaftMessage, curEpoch *metapb.Reg
 	regionID := msg.RegionId
 	fromPeer := msg.FromPeer
 	toPeer := msg.ToPeer
-	msgType := msg.Message.GetMsgType()
 
 	if !needGC {
-		log.Infof("[region %d] raft message %s is stale, current %v ignore it",
-			regionID, msgType, curEpoch)
 		return
 	}
 	gcMsg := &rspb.RaftMessage{
@@ -511,10 +504,8 @@ func (d *peerMsgHandler) handleGCPeerMsg(msg *rspb.RaftMessage) {
 		return
 	}
 	if !util.PeerEqual(d.Meta, msg.ToPeer) {
-		log.Infof("%s receive stale gc msg, ignore", d.Tag)
 		return
 	}
-	log.Infof("%s peer %s receives gc message, trying to remove", d.Tag, msg.ToPeer)
 	if d.MaybeDestroy() {
 		d.destroyPeer()
 	}
@@ -544,7 +535,6 @@ func (d *peerMsgHandler) checkSnapshot(msg *rspb.RaftMessage) (*snap.SnapKey, er
 		}
 	}
 	if !contains {
-		log.Infof("%s %s doesn't contains peer %d, skip", d.Tag, snapRegion, peerID)
 		return &key, nil
 	}
 	meta := d.ctx.storeMeta
@@ -552,7 +542,6 @@ func (d *peerMsgHandler) checkSnapshot(msg *rspb.RaftMessage) (*snap.SnapKey, er
 	defer meta.Unlock()
 	if !util.RegionEqual(meta.regions[d.regionId], d.Region()) {
 		if !d.isInitialized() {
-			log.Infof("%s stale delegate detected, skip", d.Tag)
 			return &key, nil
 		} else {
 			panic(fmt.Sprintf("%s meta corrupted %s != %s", d.Tag, meta.regions[d.regionId], d.Region()))
@@ -564,7 +553,6 @@ func (d *peerMsgHandler) checkSnapshot(msg *rspb.RaftMessage) (*snap.SnapKey, er
 		if existRegion.GetId() == snapRegion.GetId() {
 			continue
 		}
-		log.Infof("%s region overlapped %s %s", d.Tag, existRegion, snapRegion)
 		return &key, nil
 	}
 
@@ -577,7 +565,6 @@ func (d *peerMsgHandler) checkSnapshot(msg *rspb.RaftMessage) (*snap.SnapKey, er
 }
 
 func (d *peerMsgHandler) destroyPeer() {
-	log.Infof("%s starts destroy", d.Tag)
 	regionID := d.regionId
 	// We can't destroy a peer which is applying snapshot.
 	meta := d.ctx.storeMeta
@@ -695,7 +682,6 @@ func (d *peerMsgHandler) validateSplitRegion(epoch *metapb.RegionEpoch, splitKey
 
 	if !d.IsLeader() {
 		// region on this store is no longer leader, skipped.
-		log.Infof("%s not leader, skip", d.Tag)
 		return &util.ErrNotLeader{
 			RegionId: d.regionId,
 			Leader:   d.getPeerFromCache(d.LeaderId()),
@@ -709,8 +695,6 @@ func (d *peerMsgHandler) validateSplitRegion(epoch *metapb.RegionEpoch, splitKey
 	// Here we just need to check `version` because `conf_ver` will be update
 	// to the latest value of the peer, and then send to Scheduler.
 	if latestEpoch.Version != epoch.Version {
-		log.Infof("%s epoch changed, retry later, prev_epoch: %s, epoch %s",
-			d.Tag, latestEpoch, epoch)
 		return &util.ErrEpochNotMatch{
 			Message: fmt.Sprintf(
 				"%s epoch changed %s != %s, retry later",
@@ -749,18 +733,15 @@ func (d *peerMsgHandler) onGCSnap(snaps []snap.SnapKeyWithSending) {
 				continue
 			}
 			if key.Term < compactedTerm || key.Index < compactedIdx {
-				log.Infof("%s snap file %s has been compacted, delete", d.Tag, key)
 				d.ctx.snapMgr.DeleteSnapshot(key, snap, false)
 			} else if fi, err1 := snap.Meta(); err1 == nil {
 				modTime := fi.ModTime()
 				if time.Since(modTime) > 4*time.Hour {
-					log.Infof("%s snap file %s has been expired, delete", d.Tag, key)
 					d.ctx.snapMgr.DeleteSnapshot(key, snap, false)
 				}
 			}
 		} else if key.Term <= compactedTerm &&
 			(key.Index < compactedIdx || key.Index == compactedIdx) {
-			log.Infof("%s snap file %s has been applied, delete", d.Tag, key)
 			a, err := d.ctx.snapMgr.GetSnapshotForApplying(key)
 			if err != nil {
 				log.Errorf("%s failed to load snapshot for %s %v", d.Tag, key, err)

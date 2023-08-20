@@ -68,15 +68,13 @@ type Ready struct {
 
 // RawNode is a wrapper of Raft.
 type RawNode struct {
-	Raft *Raft
-	// Your Data Here (2A).
+	Raft          *Raft
 	prevSoftState *SoftState
 	prevHardState pb.HardState
 }
 
 // NewRawNode returns a new RawNode given configuration and a list of raft peers.
 func NewRawNode(config *Config) (*RawNode, error) {
-	// Your Code Here (2A).
 	Raft := newRaft(config)
 	return &RawNode{
 		Raft: Raft,
@@ -156,11 +154,9 @@ func (rn *RawNode) Step(m pb.Message) error {
 
 // Ready returns the current point-in-time state of this RawNode.
 func (rn *RawNode) Ready() Ready {
-	// Your Code Here (2A).
 	newReady := Ready{
 		Entries:          rn.Raft.RaftLog.unstableEntries(),
 		CommittedEntries: rn.Raft.RaftLog.nextEnts(),
-		Messages:         rn.Raft.msgs,
 	}
 
 	newSoftState := &SoftState{
@@ -195,7 +191,6 @@ func (rn *RawNode) Ready() Ready {
 
 // HasReady called when RawNode user need to check if any Ready pending.
 func (rn *RawNode) HasReady() bool {
-	// Your Code Here (2A).
 	newSoftState := &SoftState{
 		Lead:      rn.Raft.Lead,
 		RaftState: rn.Raft.State,
@@ -217,7 +212,6 @@ func (rn *RawNode) HasReady() bool {
 // Advance notifies the RawNode that the application has applied and saved progress in the
 // last Ready results.
 func (rn *RawNode) Advance(rd Ready) {
-	// Your Code Here (2A).
 	if rd.SoftState != nil {
 		rn.prevSoftState = rd.SoftState
 	}

@@ -94,6 +94,10 @@ func (l *RaftLog) LastAppend() *pb.Entry {
 	return &l.entries[l.length()-1]
 }
 
+func (l *RaftLog) appendEntry(e pb.Entry) {
+	l.entries = append(l.entries, e)
+}
+
 // We need to compact the log entries in some point of time like
 // storage compact stabled log entries prevent the log entries
 // grow unlimitedly in memory

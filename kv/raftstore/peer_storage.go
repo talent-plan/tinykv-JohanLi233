@@ -3,7 +3,6 @@ package raftstore
 import (
 	"bytes"
 	"fmt"
-	"time"
 
 	"github.com/Connor1996/badger"
 	"github.com/Connor1996/badger/y"
@@ -184,7 +183,6 @@ func (ps *PeerStorage) Snapshot() (eraftpb.Snapshot, error) {
 		return snapshot, err
 	}
 
-	log.Infof("%s requesting snapshot", ps.Tag)
 	ps.snapTriedCnt++
 	ch := make(chan *eraftpb.Snapshot, 1)
 	ps.snapState = snap.SnapState{
@@ -238,12 +236,6 @@ func (ps *PeerStorage) AppliedIndex() uint64 {
 func (ps *PeerStorage) validateSnap(snap *eraftpb.Snapshot) bool {
 	idx := snap.GetMetadata().GetIndex()
 	if idx < ps.truncatedIndex() {
-		log.Infof(
-			"%s snapshot is stale, generate again, snapIndex: %d, truncatedIndex: %d",
-			ps.Tag,
-			idx,
-			ps.truncatedIndex(),
-		)
 		return false
 	}
 	var snapData rspb.RaftSnapshotData
@@ -254,12 +246,6 @@ func (ps *PeerStorage) validateSnap(snap *eraftpb.Snapshot) bool {
 	snapEpoch := snapData.GetRegion().GetRegionEpoch()
 	latestEpoch := ps.region.GetRegionEpoch()
 	if snapEpoch.GetConfVer() < latestEpoch.GetConfVer() {
-		log.Infof(
-			"%s snapshot epoch is stale, snapEpoch: %s, latestEpoch: %s",
-			ps.Tag,
-			snapEpoch,
-			latestEpoch,
-		)
 		return false
 	}
 	return true
@@ -288,7 +274,6 @@ func ClearMeta(
 	regionID uint64,
 	lastIndex uint64,
 ) error {
-	start := time.Now()
 	kvWB.DeleteMeta(meta.RegionStateKey(regionID))
 	kvWB.DeleteMeta(meta.ApplyStateKey(regionID))
 
@@ -315,25 +300,18 @@ func ClearMeta(
 		raftWB.DeleteMeta(meta.RaftLogKey(regionID, i))
 	}
 	raftWB.DeleteMeta(meta.RaftStateKey(regionID))
-	log.Infof(
-		"[region %d] clear peer 1 meta key 1 apply key 1 raft key and %d raft logs, takes %v",
-		regionID,
-		lastIndex+1-firstIndex,
-		time.Since(start),
-	)
 	return nil
 }
 
 // Append the given entries to the raft log and update ps.raftState also delete log entries that will
 // never be committed
 func (ps *PeerStorage) Append(entries []eraftpb.Entry, raftWB *engine_util.WriteBatch) error {
-	// Your Code Here (2B).
 	for _, entry := range entries {
-		err := raftWB.SetMeta(meta.RaftLogKey(ps.region.GetId(), entry.GetIndex()), &entry)
-		if err != nil {
+		if err := raftWB.SetMeta(meta.RaftLogKey(ps.Region().GetId(), entry.GetIndex()), &entry); err != nil {
 			log.Panic(err)
 		}
 	}
+	// delete conflict entries
 	curLastIndex := entries[len(entries)-1].GetIndex()
 	curLastTerm := entries[len(entries)-1].GetIndex()
 	prevLastIndex := ps.raftState.GetLastIndex()
@@ -351,16 +329,11 @@ func (ps *PeerStorage) ApplySnapshot(
 	kvWB *engine_util.WriteBatch,
 	raftWB *engine_util.WriteBatch,
 ) (*ApplySnapResult, error) {
-	log.Infof("%v begin to apply snapshot", ps.Tag)
 	snapData := new(rspb.RaftSnapshotData)
 	if err := snapData.Unmarshal(snapshot.Data); err != nil {
 		return nil, err
 	}
 
-	// Hint: things need to do here including: update peer storage state like raftState and applyState, etc,
-	// and send RegionTaskApply task to region worker through ps.regionSched, also remember call ps.clearMeta
-	// and ps.clearExtraData to delete stale data
-	// Your Code Here (2C).
 	metaData := snapshot.GetMetadata()
 	applySnapResult := &ApplySnapResult{
 		PrevRegion: ps.Region(),
@@ -411,12 +384,9 @@ func (ps *PeerStorage) ApplySnapshot(
 // Save memory states to disk.
 // Do not modify ready in this function, this is a requirement to advance the ready object properly later.
 func (ps *PeerStorage) SaveReadyState(ready *raft.Ready) (*ApplySnapResult, error) {
-	// Hint: you may call `Append()` and `ApplySnapshot()` in this function
-	// Your Code Here (2B/2C).
 	hardState, unstabledEntries, committedEntries := ready.HardState, ready.Entries, ready.CommittedEntries
 	kvWB := new(engine_util.WriteBatch)
 	raftWB := new(engine_util.WriteBatch)
-
 	result := &ApplySnapResult{}
 
 	if !raft.IsEmptySnap(&ready.Snapshot) {
@@ -424,9 +394,8 @@ func (ps *PeerStorage) SaveReadyState(ready *raft.Ready) (*ApplySnapResult, erro
 	}
 
 	if n := len(committedEntries); n > 0 {
-		ps.applyState.AppliedIndex = committedEntries[len(committedEntries)-1].GetIndex()
-		err := kvWB.SetMeta(meta.ApplyStateKey(ps.region.GetId()), ps.applyState)
-		if err != nil {
+		ps.applyState.AppliedIndex = committedEntries[n-1].GetIndex()
+		if err := kvWB.SetMeta(meta.ApplyStateKey(ps.Region().GetId()), ps.applyState); err != nil {
 			log.Panic(err)
 		}
 	}
